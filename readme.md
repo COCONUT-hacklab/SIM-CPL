@@ -13,5 +13,5 @@ IPK Berbasis CPL<br>
 
 ## Endpoint
 /health
-/api/prodi      : Dropdown daftar prodi
-/api/prodi/:id_prodi/mk?semester=N
+<br>/api/prodi      : Dropdown daftar prodi
+<br>/api/prodi/:id_prodi/mk?semester=N
