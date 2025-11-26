@@ -9,3 +9,9 @@ Mahasiswa → Nilai MK<br>
 Perhitungan CPL mahasiswa<br>
         ↓<br>
 IPK Berbasis CPL<br>
+
+
+## Endpoint
+/health
+/api/prodi      : Dropdown daftar prodi
+/api/prodi/:id_prodi/mk?semester=N
