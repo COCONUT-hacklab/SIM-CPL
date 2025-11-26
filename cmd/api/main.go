@@ -2,30 +2,21 @@ package main
 
 import (
 	"log"
-	"os"
 
+	"cpmk/internal/config"
 	"cpmk/internal/db"
-	"cpmk/internal/mk"
-
-	"github.com/gin-gonic/gin"
+	httphandler "cpmk/internal/http"
 )
 
 func main() {
-	database := db.New()
+	cfg := config.Load()
 
-	svc := mk.NewService(database)
-	handler := mk.NewHandler(svc)
+	db.MustConnect(cfg.DBDSN)
 
-	r := gin.Default()
-	handler.Register(r)
+	r := httphandler.NewRouter()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Println("listening on :" + port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatal(err)
+	log.Printf("listening on :%s ...", cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
+		log.Fatalf("server error: %v", err)
 	}
 }
