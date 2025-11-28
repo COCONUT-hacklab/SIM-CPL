@@ -1,12 +1,23 @@
 package http
 
 import (
+	"time"
+
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func NewRouter() *gin.Engine {
 	r := gin.Default()
 
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"}, // Allow all origins
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour, // 12 hours
+	}))
 	// health
 	r.GET("/health", healthHandler)
 
@@ -19,6 +30,11 @@ func NewRouter() *gin.Engine {
 
 		api.POST("/prodi/:id_prodi/nilai-mk/import-xlsx", importNilaiMahasiswaXLSXHandler)
 		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
+
+		// Prodi CPL-MK Mapping
+		api.POST("/prodi/:id_prodi/cpl-mk/import-xlsx", importCPLMKMappingHandler)
+		//api.GET("/prodi/:id_prodi/cpl-mk", listCPLMKByProdiHandler)
+		//api.GET("/prodi/:id_prodi/cpl-mk/summary", getCPLMKSummaryHandler)
 	}
 
 	return r
