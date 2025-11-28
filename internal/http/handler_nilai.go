@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -12,18 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// FORMAT XLSX (sederhana):
-// Sheet1, mulai baris 2:
-// A: NIM
-// B: Nama
-// C: Angkatan
-// D: Kode MK
-// E: Semester tempuh (angka)
-// F: Tahun ajaran (string, mis "2024/2025")
-// G: Nilai angka (float)
-//
-// Admin upload per prodi & per semester.
-
 type importResponse struct {
 	ImportedMahasiswa int `json:"imported_mahasiswa"`
 	ImportedNilaiMK   int `json:"imported_nilai_mk"`
@@ -31,34 +20,53 @@ type importResponse struct {
 
 // POST /api/nilai-mk/import-xlsx
 func importNilaiMahasiswaXLSXHandler(c *gin.Context) {
-	file, err := c.FormFile("file")
+	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required (field name: file)"})
 		return
 	}
 
-	fh, err := file.Open()
+	fh, err := fileHeader.Open()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open file"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open uploaded file"})
 		return
 	}
 	defer fh.Close()
 
 	f, err := excelize.OpenReader(fh)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid xlsx"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid xlsx: " + err.Error()})
 		return
 	}
 	defer f.Close()
 
-	rows, err := f.GetRows("Sheet1")
+	// Ambil sheet pertama saja, jangan hardcode "Sheet1"
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "xlsx has no sheet"})
+		return
+	}
+	sheetName := sheets[0]
+
+	rows, err := f.GetRows(sheetName)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read Sheet1"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read rows: " + err.Error()})
+		return
+	}
+	if len(rows) <= 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no data rows (header only)"})
 		return
 	}
 
 	importedMhs := 0
 	importedNilai := 0
+
+	idProdiStr := c.Param("id_prodi")
+	idProdi, err := strconv.ParseUint(idProdiStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
+		return
+	}
 
 	err = db.DB.Transaction(func(tx *gorm.DB) error {
 		mhsCache := map[string]model.Mahasiswa{}
@@ -69,9 +77,13 @@ func importNilaiMahasiswaXLSXHandler(c *gin.Context) {
 				// header
 				continue
 			}
+
+			// Minimal 7 kolom: NIM, Nama, Angkatan, Kode MK, Semester, Tahun Ajaran, Nilai
 			if len(row) < 7 {
+				// baris kosong / tidak lengkap → skip
 				continue
 			}
+
 			nim := row[0]
 			nama := row[1]
 			angkatanStr := row[2]
@@ -81,73 +93,89 @@ func importNilaiMahasiswaXLSXHandler(c *gin.Context) {
 			nilaiStr := row[6]
 
 			if nim == "" || kodeMK == "" {
+				// baris tidak valid → skip
 				continue
 			}
 
-			// angkatan
 			angkatan, _ := strconv.Atoi(angkatanStr)
 			semInt, _ := strconv.Atoi(semStr)
 			semester := uint8(semInt)
 			nilai, _ := strconv.ParseFloat(nilaiStr, 64)
 
-			// mahasiswa (cari / buat)
+			// --- MAHASISWA (cari / buat) ---
 			mhs, ok := mhsCache[nim]
 			if !ok {
-				if err := tx.Where("nim = ?", nim).First(&mhs).Error; err != nil {
-					// buat baru, tapi perlu id_prodi - sementara: 1 (hardcode dulu, nanti disesuaikan)
-					mhs = model.Mahasiswa{
-						IDProdi:  1,
-						NIM:      nim,
-						Nama:     nama,
-						Angkatan: angkatan,
-						Status:   "aktif",
-					}
-					if err := tx.Create(&mhs).Error; err != nil {
+				err := tx.Where("nim = ?", nim).First(&mhs).Error
+				if err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						// buat baru
+						mhs = model.Mahasiswa{
+							IDProdi:  idProdi,
+							NIM:      nim,
+							Nama:     nama,
+							Angkatan: angkatan,
+							Status:   "aktif",
+						}
+						if err := tx.Create(&mhs).Error; err != nil {
+							return err
+						}
+						importedMhs++
+					} else {
+						// error lain → batalkan transaksi
 						return err
 					}
-					importedMhs++
 				}
 				mhsCache[nim] = mhs
 			}
 
-			// mk (cari by kode_mk)
+			// --- MK (harus sudah ada di master mk) ---
 			mk, ok2 := mkCache[kodeMK]
 			if !ok2 {
 				if err := tx.Where("kode_mk = ?", kodeMK).First(&mk).Error; err != nil {
-					// kalau MK tidak ketemu, skip baris
-					continue
+					// kalau mk tidak ditemukan, ini serius → stop & lapor
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						return errors.New("kode_mk " + kodeMK + " tidak ditemukan di tabel mk")
+					}
+					return err
 				}
 				mkCache[kodeMK] = mk
 			}
 
-			// upsert nilai_mk
+			// --- UPSERT nilai_mk ---
 			var existing model.NilaiMK
 			err := tx.Where("id_mhs = ? AND id_mk = ? AND semester_tempuh = ?",
 				mhs.IDMhs, mk.IDMK, semester).First(&existing).Error
 
 			if err != nil {
-				nm := model.NilaiMK{
-					IDMhs:          mhs.IDMhs,
-					IDMK:           mk.IDMK,
-					SemesterTempuh: semester,
-					TahunAjaran:    tahunAjaran,
-					NilaiAngka:     nilai,
-					Sumber:         "import_xlsx",
-				}
-				if err := tx.Create(&nm).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					// insert baru
+					nm := model.NilaiMK{
+						IDMhs:          mhs.IDMhs,
+						IDMK:           mk.IDMK,
+						SemesterTempuh: semester,
+						TahunAjaran:    tahunAjaran,
+						NilaiAngka:     nilai,
+						Sumber:         "import_xlsx",
+					}
+					if err := tx.Create(&nm).Error; err != nil {
+						return err
+					}
+					importedNilai++
+				} else {
 					return err
 				}
 			} else {
+				// update nilai
 				existing.NilaiAngka = nilai
 				existing.TahunAjaran = tahunAjaran
 				existing.Sumber = "import_xlsx"
 				if err := tx.Save(&existing).Error; err != nil {
 					return err
 				}
+				importedNilai++
 			}
-			importedNilai++
 
-			// Hitung CPL untuk mhs ini & semester ini
+			// Hitung CPL mahasiswa ini di semester tersebut
 			if err := HitungCPLMahasiswa(mhs.IDMhs, semester); err != nil {
 				return err
 			}
@@ -157,7 +185,7 @@ func importNilaiMahasiswaXLSXHandler(c *gin.Context) {
 	})
 
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

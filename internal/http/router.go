@@ -17,7 +17,7 @@ func NewRouter() *gin.Engine {
 		api.GET("/prodi/:id_prodi/mk", listMKByProdiSemesterHandler)
 		api.GET("/mk/:id_mk/cpmk", listCPMKByMKHandler)
 
-		api.POST("/nilai-mk/import-xlsx", importNilaiMahasiswaXLSXHandler)
+		api.POST("/prodi/:id_prodi/nilai-mk/import-xlsx", importNilaiMahasiswaXLSXHandler)
 		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
 	}
 

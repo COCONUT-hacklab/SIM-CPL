@@ -34,6 +34,18 @@ func listCPLByProdiHandler(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
 		return
 	}
+	//array nama prodi
+	var prodi [6]string = [6]string{
+		"Elektro",
+		"Arsitektur",
+		"Informatika",
+	}
+	id -= 1
+	if len(cpls) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"Empty": "404 Not Found for CPL by Prodi " + prodi[id]})
+		return
+	}
+
 	c.JSON(http.StatusOK, cpls)
 }
 
