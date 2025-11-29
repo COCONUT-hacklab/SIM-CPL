@@ -1,4 +1,4 @@
-# 🎓 Sistem Capaian Pembelajaran Lulusan (CPL)
+# Sistem Capaian Pembelajaran Lulusan (CPL)
 
 **Universitas Muhammadiyah Makassar**
 
@@ -593,7 +593,7 @@ Jika sistem ini bermanfaat, berikan ⭐ di GitHub!
 
 **Sistem CPL** adalah bagian dari transformasi digital pendidikan tinggi di Indonesia.
 
-Crafted with ❤️ by [COCONUT-Lab](https://coconut.or.id/) 
+Crafted with ❤️ by [hacklab](https://coconut.or.id/) 
 
 **© 2025 Universitas Muhammadiyah Makassar**
 
