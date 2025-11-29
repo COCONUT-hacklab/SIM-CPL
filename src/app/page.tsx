@@ -29,7 +29,7 @@ export default function HomePage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
             <div className="inline-block bg-blue-100 text-blue-700 px-4 py-2 rounded-full text-sm font-semibold mb-6">
-              Sistem Management
+              Sistem Management 
             </div>
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6 leading-tight">
               Capaian<br />
@@ -201,7 +201,7 @@ export default function HomePage() {
                   </svg>
                 </div>
                 <h3 className="text-lg font-bold text-gray-800 mb-2">Dashboard Tree Diagram</h3>
-                <p className="text-gray-600 text-sm">Visualisasi hierarki CPL → Mata Kuliah → CPMK yang interaktif dan mudah dipahami</p>
+                <p className="text-gray-600 text-sm">Visualisasi hierarki CPL [next] Mata Kuliah [next] CPMK yang interaktif dan mudah dipahami</p>
               </div>
 
               {/* Feature 2 */}
@@ -281,9 +281,9 @@ export default function HomePage() {
               <div className="relative">
                 <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-xl p-6 shadow-lg">
                   <div className="text-4xl font-bold mb-3">01</div>
-                  <h3 className="text-xl font-bold mb-3">Input Nilai CPMK</h3>
+                  <h3 className="text-xl font-bold mb-3">Input Nilai MK</h3>
                   <p className="text-blue-100 text-sm">
-                    Input nilai per CPMK untuk setiap mata kuliah. Sistem otomatis menghitung nilai MK berdasarkan bobot CPMK.
+                    Input nilai MK (Mata Kuliah) per-semester untuk masing-masing program studi.
                   </p>
                 </div>
                 <div className="hidden md:block absolute top-1/2 -right-4 transform -translate-y-1/2">
@@ -321,7 +321,7 @@ export default function HomePage() {
 
             {/* Formula */}
             <div className="mt-12 bg-gray-50 rounded-xl p-6 border border-gray-200">
-              <h4 className="font-bold text-gray-900 mb-3">📐 Formula Kalkulasi:</h4>
+              <h4 className="font-bold text-gray-900 mb-3"> Formula Kalkulasi:</h4>
               <div className="bg-white rounded-lg p-4 font-mono text-sm text-gray-700 border border-gray-200">
                 <div className="mb-2">Nilai MK = Σ (Nilai CPMK × Bobot CPMK)</div>
                 <div className="mb-2">Bobot MK = 100% / Jumlah MK per CPL</div>
