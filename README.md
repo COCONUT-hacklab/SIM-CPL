@@ -1,4 +1,4 @@
-# 🎓 Sistem Capaian Pembelajaran Lulusan (CPL)
+# Sistem Capaian Pembelajaran Lulusan (CPL)
 
 **Universitas Muhammadiyah Makassar**
 
@@ -73,7 +73,7 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
   - Kontribusi ke CPL (persentase)
 - Export PDF/Excel (mockup)
 
-### 📁 **Manajemen Data & Import Nilai** ⭐ NEW!
+### **Manajemen Data & Import Nilai** ⭐ NEW!
 
 **4 Tab Terintegrasi:**
 
@@ -84,13 +84,13 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
 - Auto-kalkulasi CPL dari nilai MK
 - Statistik hasil import (Total, Sukses, Gagal)
 
-#### 2️⃣ **Tab Mahasiswa**
+####  **Tab Mahasiswa**
 - Monitoring mahasiswa dengan nilai
 - Filter per prodi
 - Status: 🟢 Terimport / 🔵 Mock Data / ⚪ Manual
 - Statistik: Total nilai, dari import, kelengkapan
 
-#### 3️⃣ **Tab Mata Kuliah**
+####  **Tab Mata Kuliah**
 - Grid cards dengan statistik per MK
 - Rata-rata nilai dengan color coding:
   - 🟢 Hijau (≥75): Baik
@@ -110,12 +110,12 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
 - localStorage → Persist data
 - Tombol refresh manual di setiap tab
 
-### 🎯 **CPL & Pemetaan Kurikulum**
+### **CPL & Pemetaan Kurikulum**
 - Matrix mapping CPL ↔ MK ↔ CPMK
 - Visualisasi bobot kontribusi
 - 8 CPL per prodi dengan deskripsi lengkap
 
-### 🎨 **UI/UX Modern**
+### **UI/UX Modern**
 - **Responsive Design**: Desktop, tablet, mobile
 - **Dark Mode Compatible**: Siap untuk dark theme
 - **Interactive Charts**: Recharts untuk visualisasi
@@ -129,7 +129,7 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
 ### Dashboard dengan Tree Diagram
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  📊 Dashboard CPL - Teknik Informatika                  │
+│     Dashboard CPL - Teknik Informatika                  │
 ├─────────────────────────────────────────────────────────┤
 │  📘 CPL1: Mampu menerapkan pemikiran logis              │
 │    └─ 📗 Pemrograman Web (INF101) - 3 SKS              │
@@ -146,21 +146,21 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
 ### Laporan CPL dengan Breakdown
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  📊 Laporan CPL - Andi Miftah (105841109601)           │
-│  Semester 1 | 2023/2024 Ganjil                         │
+│      Laporan CPL - Andi Miftah (105841109601)           │
+│      Semester 1 | 2023/2024 Ganjil                      │
 ├─────────────────────────────────────────────────────────┤
-│  CPL3: Mampu menerapkan pemikiran logis [▼ Expand]     │
-│  Nilai: 82.5 | Status: 🟢 Tercapai                     │
-│                                                          │
+│  CPL3: Mampu menerapkan pemikiran logis [▼ Expand]      │
+│  Nilai: 82.5 | Status: 🟢 Tercapai                      │
+│                                                         │
 │  📗 Pemrograman Web (INF101) - 3 SKS                    │
-│  ┌────────────┬───────┬──────────────┬─────────────┐   │
-│  │ CPMK       │ Bobot │ Nilai        │ Kontribusi  │   │
-│  ├────────────┼───────┼──────────────┼─────────────┤   │
-│  │ CPMK1-1    │ 20%   │ 85 → 17.0   │ 2.5% → CPL  │   │
-│  │ CPMK1-2    │ 30%   │ 90 → 27.0   │ 3.75% → CPL │   │
-│  │ CPMK1-3    │ 25%   │ 78 → 19.5   │ 3.13% → CPL │   │
-│  │ CPMK1-4    │ 25%   │ 82 → 20.5   │ 3.13% → CPL │   │
-│  └────────────┴───────┴──────────────┴─────────────┘   │
+│  ┌────────────┬───────┬──────────────┬─────────────┐    │
+│  │ CPMK       │ Bobot │ Nilai        │ Kontribusi  │    │
+│  ├────────────┼───────┼──────────────┼─────────────┤    │
+│  │ CPMK1-1    │ 20%   │ 85 → 17.0   │ 2.5% → CPL  │     │
+│  │ CPMK1-2    │ 30%   │ 90 → 27.0   │ 3.75% → CPL │     │
+│  │ CPMK1-3    │ 25%   │ 78 → 19.5   │ 3.13% → CPL │     │
+│  │ CPMK1-4    │ 25%   │ 82 → 20.5   │ 3.13% → CPL │     │
+│  └────────────┴───────┴──────────────┴─────────────┘    │
 │  Nilai MK: 84.0 | Kontribusi ke CPL3: 12.5%             │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -168,33 +168,33 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
 ### Manajemen Data - Import Tab
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  📁 Manajemen Data - Import Nilai                       │
+│     Manajemen Data - Import Nilai                       │
 ├─────────────────────────────────────────────────────────┤
-│  Prodi: [Informatika ▼]  Semester: [1 ▼]               │
-│                                                          │
-│  📎 Upload File Excel/CSV                               │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │  Drag & drop file atau klik untuk pilih         │   │
-│  │  Format: .xlsx, .csv | Max: 5MB                  │   │
-│  └─────────────────────────────────────────────────┘   │
-│                                                          │
-│  📋 Preview Data (10 rows)                              │
-│  ┌────────┬─────────────┬───────┬───────┬───────┐      │
-│  │ NIM    │ Nama        │ INF101│ INF102│ ...   │      │
-│  ├────────┼─────────────┼───────┼───────┼───────┤      │
-│  │ 105... │ Andi Miftah │ 85    │ 90    │ ...   │      │
-│  │ 105... │ Annisya     │ 90    │ 85    │ ...   │      │
-│  └────────┴─────────────┴───────┴───────┴───────┘      │
-│                                                          │
-│  [✅ Import Data]  [📥 Download Template]               │
-│                                                          │
-│  ✓ Import berhasil: 10 data | 0 gagal                  │
+│   Prodi: [Informatika ▼]  Semester: [1 ▼]               │
+│                                                         │
+│     pload File Excel/CSV                                │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │  Drag & drop file atau klik untuk pilih         │    │
+│  │  Format: .xlsx, .csv | Max: 5MB                 │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                         │
+│    Preview Data (10 rows)                               │
+│  ┌────────┬─────────────┬───────┬───────┬───────┐       │
+│  │ NIM    │ Nama        │ INF101│ INF102│ ...   │       │
+│  ├────────┼─────────────┼───────┼───────┼───────┤       │
+│  │ 105... │ Andi Miftah │ 85    │ 90    │ ...   │       │
+│  │ 105... │ Annisya     │ 90    │ 85    │ ...   │       │
+│  └────────┴─────────────┴───────┴───────┴───────┘       │
+│                                                         │
+│     [Import Data]  [📥 Download Template]               │
+│                                                         │
+│  ✓ Import berhasil: 10 data | 0 gagal                   │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Frontend
 - **Framework**: Next.js 14.2.33 (App Router)
@@ -216,7 +216,7 @@ Setiap program studi memiliki **8 CPL** yang terstruktur sesuai kurikulum masing
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -256,7 +256,7 @@ npm start
 
 ---
 
-## 📂 Struktur Project
+## Struktur Project
 
 ```
 kkp-plus-new/
@@ -305,9 +305,9 @@ kkp-plus-new/
 
 ---
 
-## 📚 Dokumentasi
+## Dokumentasi
 
-### 📖 Dokumentasi Lengkap
+### Dokumentasi Lengkap
 
 | Dokumen | Deskripsi | Link |
 |---------|-----------|------|
@@ -316,7 +316,7 @@ kkp-plus-new/
 | **PANDUAN-IMPORT-NILAI.md** | Cara import nilai dari Excel/CSV | [Buka](./PANDUAN-IMPORT-NILAI.md) |
 | **MK_CODES.md** | Daftar kode mata kuliah semua prodi | [Akan dibuat] |
 
-### 🎓 Panduan Penggunaan
+### Panduan Penggunaan
 
 1. **Login**: Gunakan akun kaprodi sesuai prodi
 2. **Dashboard**: Lihat overview CPL dengan tree diagram
@@ -324,7 +324,7 @@ kkp-plus-new/
 4. **Laporan**: Generate laporan dengan breakdown detail CPMK
 5. **Manajemen**: Monitor data mahasiswa, MK, dan CPL
 
-### 📊 Cara Kerja Sistem
+### Cara Kerja Sistem
 
 **Alur Kalkulasi CPL:**
 ```
@@ -349,7 +349,7 @@ CPL3: Mampu menerapkan pemikiran logis
 
 ---
 
-## 🔐 Akun Demo
+## Akun Demo
 
 Sistem menyediakan 5 akun demo untuk testing:
 
@@ -371,7 +371,7 @@ Sistem menyediakan 5 akun demo untuk testing:
 
 ---
 
-## 📦 Dependencies
+## Dependencies
 
 ### Production Dependencies
 
@@ -398,7 +398,7 @@ Sistem menyediakan 5 akun demo untuk testing:
 
 ---
 
-## 🚀 Deployment
+## Deployment
 
 ### Vercel (Recommended)
 
@@ -434,7 +434,7 @@ JWT_SECRET=your-secret-key
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run unit tests
@@ -449,7 +449,7 @@ npm run test:e2e
 
 ---
 
-## 🤝 Kontribusi
+## Kontribusi
 
 Kami menyambut kontribusi dari komunitas! Berikut cara berkontribusi:
 
@@ -496,48 +496,7 @@ chore: update build tasks, package manager configs, etc
 
 ---
 
-## 📝 Roadmap
-
-### ✅ Completed (v2.0)
-- [x] Dashboard dengan tree diagram CPL-MK-CPMK
-- [x] Input nilai manual per CPMK
-- [x] Laporan CPL dengan CPMK breakdown
-- [x] Import nilai dari Excel/CSV
-- [x] Manajemen data 4-tab terintegrasi
-- [x] Real-time refresh mechanism
-- [x] 5 prodi support (INF, ARS, PWK, SIP, ELK)
-- [x] localStorage integration
-- [x] Responsive design
-
-### 🚧 In Progress (v2.1)
-- [ ] Export PDF implementasi (jsPDF)
-- [ ] Export Excel implementasi (xlsx)
-- [ ] MK_CODES.md lengkap semua prodi
-
-### 🔮 Future (v3.0)
-- [ ] Backend API (Express/NestJS)
-- [ ] Database integration (PostgreSQL)
-- [ ] Real authentication (JWT)
-- [ ] Email notifications
-- [ ] Advanced analytics dashboard
-- [ ] Mobile app (React Native)
-- [ ] Real-time collaboration
-- [ ] Audit trail & logging
-
----
-
-## 🐛 Known Issues
-
-- Export PDF/Excel masih mockup (belum terimplementasi)
-- Data masih localStorage (belum database)
-- Authentication masih session storage (demo mode)
-- Beberapa MK belum ada data CPMK lengkap
-
-Lihat [Issues](https://github.com/Nur-Hidayat-FTI22E/CPL_Sign/issues) untuk daftar lengkap.
-
----
-
-## 📄 Lisensi
+## Lisensi
 
 Sistem ini dikembangkan untuk **Universitas Muhammadiyah Makassar** dan dilisensikan di bawah [MIT License](LICENSE).
 
@@ -553,16 +512,14 @@ in the Software without restriction...
 
 ---
 
-## 👥 Tim Pengembang
+## Tim Pengembang
 
-**Developer**: [Your Name]  
-**Institution**: Universitas Muhammadiyah Makassar  
-**Faculty**: Teknik  
-**Program**: Teknik Informatika
+**Developer**: [hacklab](https://github.com/COCONUT-hacklab) 
+**Organization**: COCONUT Computer Club 
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 Terima kasih kepada:
 - **Universitas Muhammadiyah Makassar** - Dukungan dan fasilitas
@@ -574,16 +531,16 @@ Terima kasih kepada:
 
 ---
 
-## 📞 Kontak & Support
+## Kontak & Support
 
 - **Email**: [contact@unismuh.ac.id]
 - **Website**: [https://unismuh.ac.id](https://unismuh.ac.id)
-- **GitHub Issues**: [Report Bug](https://github.com/Nur-Hidayat-FTI22E/CPL_Sign/issues)
-- **GitHub Discussions**: [Ask Question](https://github.com/Nur-Hidayat-FTI22E/CPL_Sign/discussions)
+- **GitHub Issues**: [Report Bug](https://github.com/COCONUT-hacklab/SIM-CPL/issues)
+- **GitHub Discussions**: [Ask Question](https://github.com/COCONUT-hacklab/SIM-CPL/discussions)
 
 ---
 
-## 🌟 Star History
+## Star History
 
 Jika sistem ini bermanfaat, berikan ⭐ di GitHub!
 
@@ -593,7 +550,7 @@ Jika sistem ini bermanfaat, berikan ⭐ di GitHub!
 
 **Sistem CPL** adalah bagian dari transformasi digital pendidikan tinggi di Indonesia.
 
-Crafted with ❤️ by [COCONUT-Lab](https://coconut.or.id/) 
+Crafted with ❤️ by [hacklab](https://coconut.or.id/) 
 
 **© 2025 Universitas Muhammadiyah Makassar**
 
