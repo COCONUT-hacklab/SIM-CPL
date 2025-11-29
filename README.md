@@ -514,8 +514,8 @@ in the Software without restriction...
 
 ## Tim Pengembang
 
-**Developer**: [hacklab]  
-**Institution**: COCONUT Computer Club 
+**Developer**: [hacklab](https://github.com/COCONUT-hacklab) 
+**Organization**: COCONUT Computer Club 
 
 ---
 
