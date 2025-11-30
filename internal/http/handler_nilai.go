@@ -1,9 +1,12 @@
 package http
 
 import (
-	"errors"
+	"encoding/csv"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"cpmk/internal/db"
 	"cpmk/internal/model"
@@ -19,179 +22,243 @@ type importResponse struct {
 }
 
 // POST /api/nilai-mk/import-xlsx
+// importNilaiMahasiswaXLSXHandler
+// Endpoint: POST /api/prodi/:id_prodi/nilai-mk/import-xlsx
+// Menerima file .xlsx atau .csv, membaca NIM, Nama, dan nilai MK,
+// lalu menyimpannya ke tabel nilai.
 func importNilaiMahasiswaXLSXHandler(c *gin.Context) {
-	fileHeader, err := c.FormFile("file")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required (field name: file)"})
-		return
-	}
-
-	fh, err := fileHeader.Open()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open uploaded file"})
-		return
-	}
-	defer fh.Close()
-
-	f, err := excelize.OpenReader(fh)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid xlsx: " + err.Error()})
-		return
-	}
-	defer f.Close()
-
-	// Ambil sheet pertama saja, jangan hardcode "Sheet1"
-	sheets := f.GetSheetList()
-	if len(sheets) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "xlsx has no sheet"})
-		return
-	}
-	sheetName := sheets[0]
-
-	rows, err := f.GetRows(sheetName)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read rows: " + err.Error()})
-		return
-	}
-	if len(rows) <= 1 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "no data rows (header only)"})
-		return
-	}
-
-	importedMhs := 0
-	importedNilai := 0
-
+	// --- 1. Ambil id_prodi dari path ---
 	idProdiStr := c.Param("id_prodi")
+	if idProdiStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id_prodi wajib diisi"})
+		return
+	}
+
 	idProdi, err := strconv.ParseUint(idProdiStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id_prodi tidak valid"})
 		return
 	}
 
-	err = db.DB.Transaction(func(tx *gorm.DB) error {
-		mhsCache := map[string]model.Mahasiswa{}
-		mkCache := map[string]model.MK{}
+	// --- 2. Ambil file dari form-data ---
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file tidak ditemukan di form-data (key: file)"})
+		return
+	}
 
-		for i, row := range rows {
-			if i == 0 {
-				// header
-				continue
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+	file, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "gagal membuka file upload"})
+		return
+	}
+	defer file.Close()
+
+	// --- 3. Baca file menjadi rows[][]string (Excel atau CSV) ---
+	var rows [][]string
+
+	switch ext {
+	case ".xlsx", ".xlsm", ".xls":
+		// Baca Excel
+		xls, err := excelize.OpenReader(file)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "file excel tidak valid"})
+			return
+		}
+		defer xls.Close()
+
+		sheetName := xls.GetSheetName(0)
+		if sheetName == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "sheet excel kosong"})
+			return
+		}
+
+		rows, err = xls.GetRows(sheetName)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "gagal membaca sheet excel"})
+			return
+		}
+
+	case ".csv":
+		// Baca CSV
+		reader := csv.NewReader(file)
+		reader.TrimLeadingSpace = true
+		rows, err = reader.ReadAll()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "gagal membaca file CSV"})
+			return
+		}
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("format file tidak didukung: %s (hanya .xlsx / .csv)", ext),
+		})
+		return
+	}
+
+	if len(rows) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file tidak memiliki data (minimal header + 1 baris data)"})
+		return
+	}
+
+	// --- 4. Proses header: cari index nim, nama, dan kolom MK ---
+	headerRow := rows[0]
+	headers := make([]string, len(headerRow))
+	for i, h := range headerRow {
+		headers[i] = strings.TrimSpace(strings.ToLower(h))
+	}
+
+	nimIdx := -1
+	namaIdx := -1
+	mkCols := make(map[int]string) // idx kolom -> kode/nama MK (raw dari header)
+
+	for i, h := range headers {
+		switch h {
+		case "nim", "npm":
+			nimIdx = i
+		case "nama", "nama mahasiswa":
+			namaIdx = i
+		default:
+			if h != "" {
+				// anggap header lain adalah kode/nama MK (ex: "inf105", "pancasila")
+				mkCols[i] = h
 			}
+		}
+	}
 
-			// Minimal 7 kolom: NIM, Nama, Angkatan, Kode MK, Semester, Tahun Ajaran, Nilai
-			if len(row) < 7 {
-				// baris kosong / tidak lengkap → skip
-				continue
+	if nimIdx == -1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "kolom NIM/NPM tidak ditemukan di header"})
+		return
+	}
+	if len(mkCols) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tidak ada kolom mata kuliah di header (selain nim/nama)"})
+		return
+	}
+
+	// --- 5. Proses tiap baris data ---
+	importedNilai := 0
+	failedRows := 0
+
+	for rowIdx := 1; rowIdx < len(rows); rowIdx++ {
+		row := rows[rowIdx]
+		if len(row) == 0 {
+			continue
+		}
+
+		// jaga-jaga kalau ada baris pendek
+		getCell := func(idx int) string {
+			if idx < len(row) {
+				return strings.TrimSpace(row[idx])
 			}
+			return ""
+		}
 
-			nim := row[0]
-			nama := row[1]
-			angkatanStr := row[2]
-			kodeMK := row[3]
-			semStr := row[4]
-			tahunAjaran := row[5]
-			nilaiStr := row[6]
+		nim := getCell(nimIdx)
+		if nim == "" {
+			failedRows++
+			continue
+		}
+		nama := ""
+		if namaIdx >= 0 {
+			nama = getCell(namaIdx)
+		}
 
-			if nim == "" || kodeMK == "" {
-				// baris tidak valid → skip
-				continue
-			}
-
-			angkatan, _ := strconv.Atoi(angkatanStr)
-			semInt, _ := strconv.Atoi(semStr)
-			semester := uint8(semInt)
-			nilai, _ := strconv.ParseFloat(nilaiStr, 64)
-
-			// --- MAHASISWA (cari / buat) ---
-			mhs, ok := mhsCache[nim]
-			if !ok {
-				err := tx.Where("nim = ?", nim).First(&mhs).Error
-				if err != nil {
-					if errors.Is(err, gorm.ErrRecordNotFound) {
-						// buat baru
-						mhs = model.Mahasiswa{
-							IDProdi:  idProdi,
-							NIM:      nim,
-							Nama:     nama,
-							Angkatan: angkatan,
-							Status:   "aktif",
-						}
-						if err := tx.Create(&mhs).Error; err != nil {
-							return err
-						}
-						importedMhs++
-					} else {
-						// error lain → batalkan transaksi
-						return err
-					}
+		// --- 5a. Ambil / buat Mahasiswa ---
+		var mhs model.Mahasiswa // SESUAIKAN dengan struct kamu
+		err := db.DB.Where("nim = ? AND id_prodi = ?", nim, idProdi).First(&mhs).Error
+		if err != nil {
+			if err == gorm.ErrRecordNotFound {
+				// buat mahasiswa baru
+				mhs = model.Mahasiswa{
+					// SESUAIKAN field-nya dengan model kamu
+					NIM:     nim,
+					Nama:    nama,
+					IDProdi: idProdi,
 				}
-				mhsCache[nim] = mhs
-			}
-
-			// --- MK (harus sudah ada di master mk) ---
-			mk, ok2 := mkCache[kodeMK]
-			if !ok2 {
-				if err := tx.Where("kode_mk = ?", kodeMK).First(&mk).Error; err != nil {
-					// kalau mk tidak ditemukan, ini serius → stop & lapor
-					if errors.Is(err, gorm.ErrRecordNotFound) {
-						return errors.New("kode_mk " + kodeMK + " tidak ditemukan di tabel mk")
-					}
-					return err
-				}
-				mkCache[kodeMK] = mk
-			}
-
-			// --- UPSERT nilai_mk ---
-			var existing model.NilaiMK
-			err := tx.Where("id_mhs = ? AND id_mk = ? AND semester_tempuh = ?",
-				mhs.IDMhs, mk.IDMK, semester).First(&existing).Error
-
-			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					// insert baru
-					nm := model.NilaiMK{
-						IDMhs:          mhs.IDMhs,
-						IDMK:           mk.IDMK,
-						SemesterTempuh: semester,
-						TahunAjaran:    tahunAjaran,
-						NilaiAngka:     nilai,
-						Sumber:         "import_xlsx",
-					}
-					if err := tx.Create(&nm).Error; err != nil {
-						return err
-					}
-					importedNilai++
-				} else {
-					return err
+				if err := db.DB.Create(&mhs).Error; err != nil {
+					failedRows++
+					continue
 				}
 			} else {
-				// update nilai
-				existing.NilaiAngka = nilai
-				existing.TahunAjaran = tahunAjaran
-				existing.Sumber = "import_xlsx"
-				if err := tx.Save(&existing).Error; err != nil {
-					return err
-				}
-				importedNilai++
-			}
-
-			// Hitung CPL mahasiswa ini di semester tersebut
-			if err := HitungCPLMahasiswa(mhs.IDMhs, semester); err != nil {
-				return err
+				// error lain
+				failedRows++
+				continue
 			}
 		}
 
-		return nil
-	})
+		// --- 5b. Loop tiap kolom MK ---
+		for colIdx, mkKey := range mkCols {
+			rawVal := getCell(colIdx)
+			if rawVal == "" {
+				continue
+			}
 
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+			nilaiFloat, err := strconv.ParseFloat(strings.ReplaceAll(rawVal, ",", "."), 64)
+			if err != nil {
+				// nilai tidak valid -> skip kolom ini
+				continue
+			}
+
+			// cari MK berdasarkan header (biasanya pakai kode_mk)
+			var mk model.MK // SESUAIKAN dengan struct kamu
+			err = db.DB.
+				Where("LOWER(kode_mk) = ? AND id_prodi = ?", strings.ToLower(mkKey), idProdi).
+				First(&mk).Error
+			if err != nil {
+				// kalau tidak ketemu coba pakai nama_mk
+				err2 := db.DB.
+					Where("LOWER(nama_mk) = ? AND id_prodi = ?", strings.ToLower(mkKey), idProdi).
+					First(&mk).Error
+				if err2 != nil {
+					// MK tidak ketemu di DB, skip saja kolom ini
+					continue
+				}
+			}
+
+			// --- 5c. Simpan atau update nilai MK ---
+			var nilai model.NilaiMK // SESUAIKAN dengan struct kamu
+			err = db.DB.
+				Where("id_mahasiswa = ? AND id_mk = ?", mhs.IDMahasiswa, mk.IDMK).
+				First(&nilai).Error
+
+			if err == gorm.ErrRecordNotFound {
+				nilai = model.NilaiMK{
+					// Sesuaikan field:
+					IDMahasiswa: mhs.IDMahasiswa,
+					IDMK:        mk.IDMK,
+					NilaiAkhir:  nilaiFloat,
+					Semester:    int(mk.Semester), // kalau ada
+					Sumber:      "import_xlsx",    // kalau ada field sumber
+				}
+				if err := db.DB.Create(&nilai).Error; err != nil {
+					continue
+				}
+			} else if err == nil {
+				// update nilai lama
+				nilai.NilaiAkhir = nilaiFloat
+				// nilai.Semester = ...
+				// nilai.Sumber = "import_xlsx"
+				if err := db.DB.Save(&nilai).Error; err != nil {
+					continue
+				}
+			} else {
+				continue
+			}
+
+			importedNilai++
+		}
 	}
 
-	c.JSON(http.StatusOK, importResponse{
-		ImportedMahasiswa: importedMhs,
-		ImportedNilaiMK:   importedNilai,
+	// --- 6. Response ---
+	c.JSON(http.StatusOK, gin.H{
+		"status":             "ok",
+		"id_prodi":           idProdi,
+		"file_name":          fileHeader.Filename,
+		"file_extension":     ext,
+		"imported_nilai_mk":  importedNilai,
+		"failed_rows":        failedRows,
+		"total_data_barisan": len(rows) - 1,
 	})
 }
 
