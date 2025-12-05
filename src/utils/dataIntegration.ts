@@ -10,7 +10,7 @@ export interface IntegratedNilai {
   mahasiswaId: string;
   mkKode: string;
   nilaiAkhir: number;
-  source: 'localStorage' | 'mockData';
+  source: 'localStorage' | 'backend';
   timestamp?: string;
 }
 
@@ -55,7 +55,7 @@ export function getCombinedNilaiData(): IntegratedNilai[] {
         mahasiswaId: nilai.mahasiswaId,
         mkKode: nilai.mkKode,
         nilaiAkhir: nilai.nilaiAkhir,
-        source: 'mockData',
+        source: 'backend',
       });
     }
   });
@@ -333,7 +333,7 @@ export function hasInputNilai(mahasiswaId: string): boolean {
 export function getIntegratedSummary() {
   const allNilai = getCombinedNilaiData();
   const localStorageCount = allNilai.filter((n) => n.source === 'localStorage').length;
-  const mockDataCount = allNilai.filter((n) => n.source === 'mockData').length;
+  const mockDataCount = allNilai.filter((n) => n.source === 'backend').length;
   
   return {
     total: allNilai.length,
