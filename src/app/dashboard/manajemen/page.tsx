@@ -88,7 +88,7 @@ export default function ManajemenPage() {
   const [mahasiswaWithNilai, setMahasiswaWithNilai] = useState<MahasiswaRow[]>([]);
   const [localNilai, setLocalNilai] = useState<LocalNilai[]>([]);
   const [refreshKey, setRefreshKey] = useState(0); // cuma untuk trigger re-render manual di beberapa tempat
-
+  
   // ====================== FETCH PRODI ======================
 
   useEffect(() => {
@@ -333,7 +333,7 @@ export default function ManajemenPage() {
 
         // hitung angkatan dari NIM (misal 1052310xxxx -> 2023)
         let angkatan = 'Unknown';
-        const angkatanMatch = nim.match(/10(\d{2})/);
+        const angkatanMatch = nim.match(/(\d{2})$/);
         if (angkatanMatch) {
           angkatan = '20' + angkatanMatch[1];
         }
