@@ -1,5 +1,0 @@
-1. Rekap nilai keseluruhan permahasiswa
-2. Bisa import excel persemester atau sekaligus 8 semester
-3. Penambahan CPL Keseluruhan dan CPL Semester
-4. Penggunaan AI untuk validasi perhitungan/penyesuaian CPL >> MK >> CPMK
-5. Penggunaan AI untuk Mencari data penyesuaian materi terbaru dari berbagai sumber

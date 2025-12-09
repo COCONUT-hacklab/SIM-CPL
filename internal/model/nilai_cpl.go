@@ -8,6 +8,7 @@ type NilaiCPL struct {
 	IDCPL         uint64    `gorm:"column:id_cpl;not null"`
 	SemesterEval  uint8     `gorm:"column:semester_eval;not null"`
 	NilaiAngka    float64   `gorm:"column:nilai_angka;not null"`
+	Sumber        string    `gorm:"column:sumber;type:varchar(50);not null"`
 	TanggalHitung time.Time `gorm:"column:tanggal_hitung;not null"`
 }
 

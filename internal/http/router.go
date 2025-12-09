@@ -28,12 +28,15 @@ func NewRouter() *gin.Engine {
 		api.GET("/prodi/:id_prodi/mk", listMKByProdiSemesterHandler)
 		api.GET("/mk/:id_mk/cpmk", listCPMKByMKHandler)
 
-		api.POST("/prodi/:id_prodi/nilai-mk/import-xlsx", importNilaiMahasiswaXLSXHandler)
+		//IMPORT Nilai
+		api.POST("/nilai-mk/import", importNilaiJSONHandler)
+
 		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
 
 		// Prodi CPL-MK Mapping
 		api.POST("/prodi/:id_prodi/cpl-mk/import-xlsx", importCPLMKMappingHandler)
-		//api.GET("/prodi/:id_prodi/cpl-mk", listCPLMKByProdiHandler)
+
+		//api.GET("/prodi/:id_prodi/cpl-mk", lis	tCPLMKByProdiHandler)
 		//api.GET("/prodi/:id_prodi/cpl-mk/summary", getCPLMKSummaryHandler)
 	}
 
