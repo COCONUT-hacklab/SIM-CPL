@@ -1,54 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState, ChangeEvent } from 'react';
 import * as XLSX from 'xlsx';
-
-// ===================== TIPE DARI BACKEND =====================
-
-type Prodi = {
-  id_prodi: number;
-  kode_prodi: string;
-  nama_prodi: string;
-  jenjang: string;
-};
-
-type MK = {
-  id_mk: number;
-  id_prodi: number;
-  kode_mk: string;
-  nama_mk: string;
-  sks: number;
-  semester: number;
-};
-
-// Payload ke POST /api/nilai-mk/import
-type ImportMatkulItem = {
-  kode: string;
-  nama: string;
-  sks: number;
-};
-
-type ImportMahasiswaItem = {
-  nim: string;
-  nama: string;
-  nilaiMap: Record<string, number>; // key = kode MK, value = nilai (0-100)
-};
-
-type ImportNilaiRequest = {
-  prodiKode: string;
-  semester: number;
-  matkulList: ImportMatkulItem[];
-  importData: ImportMahasiswaItem[];
-};
-
-// ===================== TIPE FRONTEND =========================
+import {
+  Prodi,
+  MK,
+  MahasiswaSummary,
+  ImportMatkulItem,
+  ImportMahasiswaItem,
+  ImportNilaiRequest,
+  fetchProdiList,
+  fetchMKByProdiSemester,
+  fetchMahasiswaSummary,
+  importNilai,
+} from '@/lib/simcplApi';
 
 type MahasiswaRow = {
-  id: string;                 // pakai NIM sebagai id
-  npm: string;                // alias NIM
+  id: string;
+  npm: string;
   nama: string;
   prodiKode: string;
-  angkatan: string;
+  angkatan: string | number;
   semesterAktif: number;
   totalNilai: number;
   nilaiDariImport: number;
@@ -60,84 +32,106 @@ type LocalNilai = {
   nilaiAkhir: number;
 };
 
-const API_BASE = 'http://localhost:8001/api'; // sesuaikan kalau beda
+// ===================== API CONFIG =====================
 
-export default function ManajemenPage() {
-  const [activeTab, setActiveTab] = useState<'import' | 'mahasiswa' | 'matakuliah' | 'cpl'>('import');
+const API_BASE =
+  process.env.NEXT_PUBLIC_SIMCPL_API_BASE ?? 'http://localhost:8001/api';
 
-  // ==== Filter ====
+const DEFAULT_TAHUN_AJARAN = '2024/2025';
+
+// ===================== PAGE COMPONENT =====================
+
+export default function ManajemenDataPage() {
+  const [activeTab, setActiveTab] = useState<'import' | 'mahasiswa' | 'matakuliah' | 'cpl'>(
+    'import'
+  );
+
+  // filter
   const [prodiList, setProdiList] = useState<Prodi[]>([]);
   const [selectedProdiKode, setSelectedProdiKode] = useState<string>('');
   const [selectedSemester, setSelectedSemester] = useState<number>(1);
 
-  const selectedProdi = prodiList.find((p) => p.kode_prodi === selectedProdiKode) || null;
+  const selectedProdi = useMemo(
+    () => prodiList.find((p) => p.kode_prodi === selectedProdiKode) ?? null,
+    [prodiList, selectedProdiKode]
+  );
 
-  // MK dari backend untuk prodi + semester ini
+  // data MK
   const [mkList, setMkList] = useState<MK[]>([]);
 
-  // ==== File & preview ====
+  // mahasiswa summary dari backend
+  const [mahasiswaSummary, setMahasiswaSummary] = useState<MahasiswaSummary[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // file & import-preview
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importData, setImportData] = useState<any[]>([]);
-
-  // ==== Status import ====
-  const [importStatus, setImportStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
+  const [importStatus, setImportStatus] = useState<'idle' | 'processing' | 'success' | 'error'>(
+    'idle'
+  );
   const [importMessage, setImportMessage] = useState('');
   const [importStats, setImportStats] = useState({ success: 0, failed: 0, total: 0 });
 
-  // ==== Data dari import terakhir (di memori saja, BUKAN localStorage) ====
+  // preview in-memory
   const [mahasiswaWithNilai, setMahasiswaWithNilai] = useState<MahasiswaRow[]>([]);
   const [localNilai, setLocalNilai] = useState<LocalNilai[]>([]);
-  const [refreshKey, setRefreshKey] = useState(0); // cuma untuk trigger re-render manual di beberapa tempat
-  
-  // ====================== FETCH PRODI ======================
+
+  // ========== EFFECT: LOAD PRODI ==========
 
   useEffect(() => {
-    const fetchProdi = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/prodi`);
-        if (!res.ok) throw new Error(`Gagal load prodi: ${res.status}`);
-        const data: Prodi[] = await res.json();
+    const controller = new AbortController();
+    fetchProdiList(controller.signal)
+      .then((data) => {
         setProdiList(data);
-
         if (!selectedProdiKode && data.length > 0) {
           setSelectedProdiKode(data[0].kode_prodi);
         }
-      } catch (err) {
-        console.error(err);
-      }
-    };
+      })
+      .catch((err) => {
+        console.error('Gagal load prodi:', err);
+      });
 
-    fetchProdi();
-  }, [selectedProdiKode]);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ====================== FETCH MK PER PRODI+SEMESTER ======================
+  // ========== EFFECT: LOAD MK UNTUK PRODI+SEMESTER ==========
 
   useEffect(() => {
-    const fetchMK = async () => {
-      if (!selectedProdi) {
+    if (!selectedProdi) {
+      setMkList([]);
+      return;
+    }
+    const controller = new AbortController();
+    fetchMKByProdiSemester(selectedProdi.id_prodi, selectedSemester, controller.signal)
+      .then(setMkList)
+      .catch((err) => {
+        console.error('Gagal load MK:', err);
         setMkList([]);
-        return;
-      }
-
-      try {
-        const res = await fetch(
-          `${API_BASE}/prodi/${selectedProdi.id_prodi}/mk?semester=${selectedSemester}`
-        );
-        if (!res.ok) throw new Error(`Gagal load MK: ${res.status}`);
-        const data: MK[] = await res.json();
-        setMkList(data);
-      } catch (err) {
-        console.error(err);
-        setMkList([]);
-      }
-    };
-
-    fetchMK();
+      });
+    return () => controller.abort();
   }, [selectedProdi, selectedSemester]);
+
+  // ========== EFFECT: LOAD MAHASISWA SUMMARY ==========
+
+  useEffect(() => {
+    if (!selectedProdi) {
+      setMahasiswaSummary([]);
+      return;
+    }
+    const controller = new AbortController();
+    fetchMahasiswaSummary(selectedProdi.id_prodi, controller.signal)
+      .then(setMahasiswaSummary)
+      .catch((err) => {
+        console.error('Gagal load mahasiswa summary:', err);
+        setMahasiswaSummary([]);
+      });
+    return () => controller.abort();
+  }, [selectedProdi, refreshKey]);
 
   // ====================== FILE HANDLING ======================
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -147,11 +141,11 @@ export default function ManajemenPage() {
       'application/vnd.ms-excel',
     ];
     const validExtensions = ['.xlsx', '.csv'];
-    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 
-    if (!validTypes.includes(file.type) && !validExtensions.includes(fileExtension)) {
+    if (!validTypes.includes(file.type) && !validExtensions.includes(ext)) {
       setImportStatus('error');
-      setImportMessage('Format file tidak didukung. Hanya file .xlsx dan .csv yang diperbolehkan.');
+      setImportMessage('File harus .xlsx atau .csv');
       setSelectedFile(null);
       setImportData([]);
       return;
@@ -162,25 +156,25 @@ export default function ManajemenPage() {
     setImportStatus('idle');
     setImportMessage('');
     setImportStats({ success: 0, failed: 0, total: 0 });
+    setMahasiswaWithNilai([]);
+    setLocalNilai([]);
   };
 
-  // Parse CSV file
   const parseCSV = (text: string): any[] => {
-    const lines = text.split('\n').filter((line) => line.trim());
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length < 2) return [];
 
     const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
     const data: any[] = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map((v) => v.trim());
+      const cols = lines[i].split(',');
+      if (cols.length === 0) continue;
       const row: any = {};
-
-      headers.forEach((header, idx) => {
-        row[header] = values[idx] || '';
+      headers.forEach((h, idx) => {
+        row[h] = (cols[idx] ?? '').trim();
       });
-
-      if (row.nim && row.nama) {
+      if (row['nim'] && row['nama']) {
         data.push(row);
       }
     }
@@ -188,37 +182,35 @@ export default function ManajemenPage() {
     return data;
   };
 
-  // Parse Excel file using XLSX library
-  const parseExcel = (arrayBuffer: ArrayBuffer): any[] => {
+  const parseExcel = (buffer: ArrayBuffer): any[] => {
     try {
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+      if (json.length < 2) return [];
 
-      if (jsonData.length < 2) return [];
-
-      const headers = jsonData[0].map((h: any) => String(h).trim().toLowerCase());
+      const headers = json[0].map((h) => String(h).trim().toLowerCase());
       const data: any[] = [];
 
-      for (let i = 1; i < jsonData.length; i++) {
+      for (let i = 1; i < json.length; i++) {
+        const rowVals = json[i];
+        if (!rowVals || rowVals.length === 0) continue;
         const row: any = {};
-        headers.forEach((header, idx) => {
-          row[header] = jsonData[i][idx] ? String(jsonData[i][idx]).trim() : '';
+        headers.forEach((h, idx) => {
+          row[h] = rowVals[idx] != null ? String(rowVals[idx]).trim() : '';
         });
-
-        if (row.nim && row.nama) {
+        if (row['nim'] && row['nama']) {
           data.push(row);
         }
       }
 
       return data;
-    } catch (error) {
-      console.error('Error parsing Excel:', error);
+    } catch (err) {
+      console.error('Error parse Excel:', err);
       return [];
     }
   };
 
-  // Preview imported data
   const handlePreviewFile = async () => {
     if (!selectedFile) return;
 
@@ -227,19 +219,18 @@ export default function ManajemenPage() {
 
     try {
       let data: any[] = [];
-
       if (selectedFile.name.toLowerCase().endsWith('.csv')) {
         const text = await selectedFile.text();
         data = parseCSV(text);
-      } else if (selectedFile.name.toLowerCase().endsWith('.xlsx')) {
-        const arrayBuffer = await selectedFile.arrayBuffer();
-        data = parseExcel(arrayBuffer);
+      } else {
+        const buf = await selectedFile.arrayBuffer();
+        data = parseExcel(buf);
       }
 
       if (data.length === 0) {
         setImportStatus('error');
         setImportMessage(
-          'File tidak memiliki data yang valid. Pastikan format: NIM, Nama, dan nilai mata kuliah'
+          'Tidak ada baris valid. Pastikan ada kolom NIM, Nama, dan nilai mata kuliah.'
         );
         setImportData([]);
         return;
@@ -247,13 +238,11 @@ export default function ManajemenPage() {
 
       setImportData(data);
       setImportStatus('idle');
-      setImportMessage(
-        `Berhasil memuat ${data.length} baris data. Silakan review dan klik Import`
-      );
-    } catch (error) {
-      console.error(error);
+      setImportMessage(`Berhasil memuat ${data.length} baris. Klik Import untuk melanjutkan.`);
+    } catch (err) {
+      console.error(err);
       setImportStatus('error');
-      setImportMessage('Gagal membaca file. Pastikan format file benar (.xlsx atau .csv)');
+      setImportMessage('Gagal membaca file.');
       setImportData([]);
     }
   };
@@ -282,7 +271,7 @@ export default function ManajemenPage() {
     }
 
     setImportStatus('processing');
-    setImportMessage('Mengimpor data...');
+    setImportMessage('Mengirim data ke server...');
 
     const matkulList: ImportMatkulItem[] = mkList.map((mk) => ({
       kode: mk.kode_mk,
@@ -293,13 +282,12 @@ export default function ManajemenPage() {
     const importMahasiswa: ImportMahasiswaItem[] = [];
     const localMhsRows: MahasiswaRow[] = [];
     const localNilaiRows: LocalNilai[] = [];
-
     let processedRows = 0;
 
     for (const row of importData) {
       try {
-        const nim = (row.nim || '').toString().trim();
-        const nama = (row.nama || '').toString().trim();
+        const nim = String(row['nim'] ?? '').trim();
+        const nama = String(row['nama'] ?? '').trim();
         if (!nim || !nama) continue;
 
         const nilaiMap: Record<string, number> = {};
@@ -307,36 +295,25 @@ export default function ManajemenPage() {
 
         mkList.forEach((mk) => {
           const kodeLower = mk.kode_mk.toLowerCase();
-          const matchingKey = Object.keys(row).find(
-            (key) => key.toLowerCase() === kodeLower
-          );
-          if (!matchingKey) return;
+          const key = Object.keys(row).find((k) => k.toLowerCase() === kodeLower);
+          if (!key) return;
 
-          const rawVal = row[matchingKey];
-          const num = parseFloat(String(rawVal).replace(',', '.'));
-          if (!isNaN(num) && num >= 0 && num <= 100) {
-            nilaiMap[mk.kode_mk] = num;
-            mkCount += 1;
+          const raw = row[key];
+          const num = parseFloat(String(raw).replace(',', '.'));
+          if (isNaN(num) || num < 0 || num > 100) return;
 
-            // simpan ke localNilaiRows untuk statistik MK
-            localNilaiRows.push({
-              nim,
-              mkKode: mk.kode_mk,
-              nilaiAkhir: num,
-            });
-          }
+          nilaiMap[mk.kode_mk] = num;
+          mkCount += 1;
+          localNilaiRows.push({ nim, mkKode: mk.kode_mk, nilaiAkhir: num });
         });
 
         if (Object.keys(nilaiMap).length === 0) continue;
 
         importMahasiswa.push({ nim, nama, nilaiMap });
 
-        // hitung angkatan dari NIM (misal 1052310xxxx -> 2023)
-        let angkatan = 'Unknown';
-        const angkatanMatch = nim.match(/(\d{2})$/);
-        if (angkatanMatch) {
-          angkatan = '20' + angkatanMatch[1];
-        }
+        let angkatan: string | number = 'Unknown';
+        const match = nim.match(/(\d{2})$/);
+        if (match) angkatan = `20${match[1]}`;
 
         localMhsRows.push({
           id: nim,
@@ -350,97 +327,79 @@ export default function ManajemenPage() {
         });
 
         processedRows++;
-      } catch (error) {
-        console.error('Error processing row:', error);
+      } catch (err) {
+        console.error('Error process row:', err);
       }
     }
 
     if (importMahasiswa.length === 0) {
       setImportStatus('error');
-      setImportMessage(
-        'Tidak ada baris dengan nilai mata kuliah valid yang bisa diimport.'
-      );
+      setImportMessage('Tidak ada baris dengan nilai mata kuliah valid.');
       return;
     }
 
     const payload: ImportNilaiRequest = {
       prodiKode: selectedProdiKode,
       semester: selectedSemester,
+      tahunAjaran: DEFAULT_TAHUN_AJARAN,
       matkulList,
       importData: importMahasiswa,
     };
 
     try {
-      const res = await fetch(`${API_BASE}/nilai-mk/import`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const controller = new AbortController();
+      const res = await importNilai(payload, controller.signal);
 
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Status ${res.status}`);
-      }
+      console.log('Import response:', res);
 
-      // backend boleh balas summary apa saja; kita tidak paksa struktur tertentu
-      const json = await res.json().catch(() => ({}));
-
-      // simpan di state FE (import terakhir)
       setMahasiswaWithNilai(localMhsRows);
       setLocalNilai(localNilaiRows);
-
       setImportStats({
         success: localNilaiRows.length,
         failed: 0,
         total: localNilaiRows.length,
       });
-
       setImportStatus('success');
       setImportMessage(
-        `✅ Import berhasil!\n📊 ${localNilaiRows.length} nilai dikirim ke server\n📁 ${processedRows} mahasiswa diproses`
+        `Import berhasil. ${localNilaiRows.length} nilai dikirim untuk ${processedRows} mahasiswa.`
       );
-
-      console.log('Response server /nilai-mk/import:', json);
-
-      setRefreshKey((prev) => prev + 1);
+      // trigger refresh summary dari DB
+      setRefreshKey((x) => x + 1);
     } catch (err: any) {
       console.error(err);
       setImportStatus('error');
-      setImportMessage(`Gagal import ke server: ${err.message || 'unknown error'}`);
+      setImportMessage(`Gagal import ke server: ${err?.message ?? 'unknown error'}`);
     }
   };
 
-  // ====================== STATISTIK MK (PAKAI DATA IMPORT TERAKHIR) ======================
+  // ====================== MK STATISTICS (local, only last import) ======================
 
-  const getMKStatistics = () => {
-    if (mkList.length === 0 || localNilai.length === 0) return [];
+  const mkStatistics = useMemo(() => {
+    if (!mkList.length || !localNilai.length) return [];
 
     return mkList.map((mk) => {
       const nilaiMK = localNilai.filter((n) => n.mkKode === mk.kode_mk);
-      const nilaiArray = nilaiMK.map((n) => n.nilaiAkhir);
-      const avgNilai =
-        nilaiArray.length > 0
-          ? Math.round(
-              (nilaiArray.reduce((sum, val) => sum + val, 0) / nilaiArray.length) * 10
-            ) / 10
-          : 0;
-      const minNilai = nilaiArray.length > 0 ? Math.min(...nilaiArray) : 0;
-      const maxNilai = nilaiArray.length > 0 ? Math.max(...nilaiArray) : 0;
+      const arr = nilaiMK.map((n) => n.nilaiAkhir);
+      const count = arr.length;
+      const avg =
+        count > 0 ? Math.round((arr.reduce((s, v) => s + v, 0) / count) * 10) / 10 : 0;
+      const min = count > 0 ? Math.min(...arr) : 0;
+      const max = count > 0 ? Math.max(...arr) : 0;
 
       return {
         kode: mk.kode_mk,
         nama: mk.nama_mk,
         sks: mk.sks,
         semester: mk.semester,
-        dosen: '-', // backend belum kirim nama dosen
-        jumlahMahasiswa: nilaiMK.length,
-        avgNilai,
-        minNilai,
-        maxNilai,
-        nilaiDariImport: nilaiMK.length,
+        jumlahMahasiswa: count,
+        avgNilai: avg,
+        minNilai: min,
+        maxNilai: max,
+        nilaiDariImport: count,
       };
     });
-  };
+  }, [mkList, localNilai]);
+
 
   // ====================== RENDER ======================
 
@@ -1042,9 +1001,9 @@ export default function ManajemenPage() {
                 </div>
               </div>
 
-              {getMKStatistics().length > 0 ? (
+              {mkStatistics.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {getMKStatistics().map((mk) => (
+                  {mkStatistics.map((mk) => (
                     <div
                       key={mk.kode}
                       className="bg-white border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-shadow"
