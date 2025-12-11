@@ -1,7 +1,9 @@
 package db
 
 import (
+	"context"
 	"log"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -9,11 +11,27 @@ import (
 
 var DB *gorm.DB
 
-func MustConnect(dsn string) *gorm.DB {
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+// MustConnect membuka koneksi DB dan panic/log.Fatalf jika gagal.
+// ctx dipakai hanya untuk handshake awal.
+func MustConnect(ctx context.Context, dsn string) *gorm.DB {
+	// batas waktu koneksi awal, misal 10 detik
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	gdb, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("failed to connect DB: %v", err)
+		log.Fatalf("failed to open DB: %v", err)
 	}
-	DB = db
-	return db
+
+	// Ping untuk memastikan koneksi hidup
+	sqlDB, err := gdb.DB()
+	if err != nil {
+		log.Fatalf("failed to get sql.DB: %v", err)
+	}
+	if err := sqlDB.PingContext(ctx); err != nil {
+		log.Fatalf("failed to ping DB: %v", err)
+	}
+
+	DB = gdb
+	return gdb
 }

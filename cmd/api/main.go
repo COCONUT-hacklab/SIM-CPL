@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"cpmk/internal/config"
@@ -9,9 +10,11 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	cfg := config.Load()
 
-	db.MustConnect(cfg.DBDSN)
+	db.MustConnect(ctx, cfg.DBDSN)
 
 	r := httphandler.NewRouter()
 

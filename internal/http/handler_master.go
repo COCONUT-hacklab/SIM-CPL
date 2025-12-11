@@ -10,47 +10,35 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type CPLStat struct {
+	IDCPL           uint64  `json:"id_cpl"`
+	KodeCPL         string  `json:"kode_cpl"`
+	Deskripsi       string  `json:"deskripsi"`
+	JumlahMahasiswa int64   `json:"jumlah_mahasiswa"`
+	RataNilai       float64 `json:"rata_nilai"`
+	MinNilai        float64 `json:"min_nilai"`
+	MaxNilai        float64 `json:"max_nilai"`
+	KategoriTinggi  int64   `json:"kategori_tinggi"`
+	KategoriSedang  int64   `json:"kategori_sedang"`
+	KategoriRendah  int64   `json:"kategori_rendah"`
+}
+
 // GET /api/prodi
 func listProdiHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	var prodis []model.Prodi
-	if err := db.DB.Find(&prodis).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+	if err := db.DB.WithContext(ctx).Find(&prodis).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error prodi"})
 		return
 	}
 	c.JSON(http.StatusOK, prodis)
 }
 
-// GET /api/prodi/:id_prodi/cpl
-func listCPLByProdiHandler(c *gin.Context) {
-	idStr := c.Param("id_prodi")
-	id, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
-		return
-	}
-
-	var cpls []model.CPL
-	if err := db.DB.Where("id_prodi = ?", id).Find(&cpls).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
-		return
-	}
-	//array nama prodi
-	var prodi [6]string = [6]string{
-		"Elektro",
-		"Arsitektur",
-		"Informatika",
-	}
-	id -= 1
-	if len(cpls) == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"Empty": "404 Not Found for CPL by Prodi " + prodi[id]})
-		return
-	}
-
-	c.JSON(http.StatusOK, cpls)
-}
-
 // GET /api/prodi/:id_prodi/mk?semester=1
 func listMKByProdiSemesterHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	idStr := c.Param("id_prodi")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -58,9 +46,9 @@ func listMKByProdiSemesterHandler(c *gin.Context) {
 		return
 	}
 	semStr := c.Query("semester")
-	var mkList []model.MK
 
-	q := db.DB.Where("id_prodi = ?", id)
+	var mkList []model.MK
+	q := db.DB.WithContext(ctx).Where("id_prodi = ?", id)
 	if semStr != "" {
 		sem, err := strconv.ParseUint(semStr, 10, 8)
 		if err != nil {
@@ -69,15 +57,44 @@ func listMKByProdiSemesterHandler(c *gin.Context) {
 		}
 		q = q.Where("semester = ?", sem)
 	}
+
 	if err := q.Find(&mkList).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error mk"})
 		return
 	}
+
 	c.JSON(http.StatusOK, mkList)
 }
 
+// GET /api/prodi/:id_prodi/cpl
+func listCPLByProdiHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	idStr := c.Param("id_prodi")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
+		return
+	}
+
+	var list []model.CPL
+	if err := db.DB.WithContext(ctx).
+		Where("id_prodi = ?", id).
+		Order("kode_cpl").
+		Find(&list).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpl"})
+		return
+	}
+
+	c.JSON(http.StatusOK, list)
+}
+
 // GET /api/mk/:id_mk/cpmk
+// GET /api/mk/:id_mk/cpmk
+// tapi kita join berdasarkan kode_mk
 func listCPMKByMKHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
 	idStr := c.Param("id_mk")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -85,10 +102,75 @@ func listCPMKByMKHandler(c *gin.Context) {
 		return
 	}
 
-	var list []model.CPMK
-	if err := db.DB.Where("id_mk = ?", id).Find(&list).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+	// ambil kode_mk dari id_mk
+	var mk model.MK
+	if err := db.DB.WithContext(ctx).First(&mk, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "mk not found"})
 		return
 	}
+
+	// cari CPMK berdasarkan kode_mk lama (kalau cpmk disimpan pake kode)
+	var list []model.CPMK
+	if err := db.DB.WithContext(ctx).
+		Where("kode_mk = ?", mk.KodeMK). // <-- kalau struktur cpmk kamu ada kolom kode_mk
+		Order("kode_cpmk").
+		Find(&list).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpmk"})
+		return
+	}
+
 	c.JSON(http.StatusOK, list)
+}
+
+// GET /api/prodi/:id_prodi/cpl-stats?semester=1
+func getCPLStatsByProdiSemesterHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	idStr := c.Param("id_prodi")
+	idProdi, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
+		return
+	}
+
+	semStr := c.Query("semester")
+	if semStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "semester wajib diisi"})
+		return
+	}
+	sem, err := strconv.Atoi(semStr)
+	if err != nil || sem <= 0 || sem > 20 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid semester"})
+		return
+	}
+
+	var rows []CPLStat
+	query := `
+SELECT
+    c.id_cpl,
+    c.kode_cpl,
+    c.deskripsi,
+    COUNT(nc.id_mhs) AS jumlah_mahasiswa,
+    COALESCE(AVG(nc.nilai_angka), 0) AS rata_nilai,
+    COALESCE(MIN(nc.nilai_angka), 0) AS min_nilai,
+    COALESCE(MAX(nc.nilai_angka), 0) AS max_nilai,
+    SUM(CASE WHEN nc.nilai_angka >= 70 THEN 1 ELSE 0 END) AS kategori_tinggi,
+    SUM(CASE WHEN nc.nilai_angka >= 50 AND nc.nilai_angka < 70 THEN 1 ELSE 0 END) AS kategori_sedang,
+    SUM(CASE WHEN nc.nilai_angka < 50 THEN 1 ELSE 0 END) AS kategori_rendah
+		FROM cpl c
+		LEFT JOIN nilai_cpl nc
+		       ON nc.id_cpl = c.id_cpl
+		      AND nc.semester_eval = ?
+		WHERE c.id_prodi = ?
+		GROUP BY c.id_cpl, c.kode_cpl, c.deskripsi
+		ORDER BY c.kode_cpl
+	`
+	if err := db.DB.WithContext(ctx).
+		Raw(query, sem, idProdi).
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpl stats"})
+		return
+	}
+
+	c.JSON(http.StatusOK, rows)
 }
