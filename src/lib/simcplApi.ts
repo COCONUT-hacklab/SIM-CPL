@@ -114,3 +114,21 @@ export async function importNilai(
   });
   return handleJson<ImportNilaiResponse>(res);
 }
+
+
+
+export async function recalcBobotProdi(idProdi: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/prodi/${idProdi}/recalc-bobot`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `Gagal menghitung ulang bobot (status ${res.status}): ${text || res.statusText}`,
+    );
+  }
+}
