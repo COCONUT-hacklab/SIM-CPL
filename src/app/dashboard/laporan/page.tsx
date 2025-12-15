@@ -1,23 +1,73 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { prodiData, mahasiswaData, cplData, mataKuliahData } from '@/data/mockData';
-import { hitungNilaiCPLPerSemesterIntegrated, getIntegratedNilaiByMahasiswa, getNilaiGroupedBySemester, hitungCPMKBreakdownPerCPL, getIntegratedMahasiswaList } from '@/utils/dataIntegration';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+
+// API Base URL
+const API_BASE = process.env.NEXT_PUBLIC_SIMCPL_API_BASE || 'http://localhost:8001/api';
+
+// Types
+type Prodi = {
+  id_prodi: number;
+  kode_prodi: string;
+  nama_prodi: string;
+};
+
+type MahasiswaSummary = {
+  id_mhs: number;
+  nim: string;
+  nama: string;
+  angkatan: number;
+  semester_max?: number;
+  total_nilai?: number;
+  dari_import?: number;
+};
+
+type NilaiCPLItem = {
+  id_cpl: number;
+  kode_cpl: string;
+  deskripsi: string;
+  nilai_angka: number;
+  semester_eval: number;
+};
+
+type CPLStatItem = {
+  id_cpl: number;
+  kode_cpl: string;
+  deskripsi: string;
+  jumlah_mahasiswa: number;
+  rata_nilai: number;
+  min_nilai: number;
+  max_nilai: number;
+  kategori_tinggi: number;
+  kategori_sedang: number;
+  kategori_rendah: number;
+};
 
 type ViewMode = 'mahasiswa' | 'semester' | 'prodi';
 type MahasiswaViewTab = 'keseluruhan' | 'persemester';
 
 export default function LaporanPage() {
-  const [selectedProdi, setSelectedProdi] = useState('ARS');
-  const [selectedSemester, setSelectedSemester] = useState(2);
-  const [selectedMahasiswa, setSelectedMahasiswa] = useState('');
+  // API data state
+  const [prodiList, setProdiList] = useState<Prodi[]>([]);
+  const [mahasiswaList, setMahasiswaList] = useState<MahasiswaSummary[]>([]);
+
+  // Selection state
+  const [selectedProdi, setSelectedProdi] = useState<Prodi | null>(null);
+  const [selectedSemester, setSelectedSemester] = useState(1);
+  const [selectedMahasiswa, setSelectedMahasiswa] = useState<MahasiswaSummary | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('mahasiswa');
   const [mahasiswaViewTab, setMahasiswaViewTab] = useState<MahasiswaViewTab>('keseluruhan');
-  const [filteredMahasiswa, setFilteredMahasiswa] = useState<any[]>([]);
+
+  // Data state
   const [laporanData, setLaporanData] = useState<any>(null);
   const [expandedCPL, setExpandedCPL] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0); // Key untuk force refresh
+
+  // Loading state
+  const [loadingProdi, setLoadingProdi] = useState(false);
+  const [loadingMahasiswa, setLoadingMahasiswa] = useState(false);
+  const [loadingLaporan, setLoadingLaporan] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Listen to nilai updates from import
   useEffect(() => {
@@ -26,221 +76,231 @@ export default function LaporanPage() {
       setRefreshKey(prev => prev + 1);
     };
 
-    const handleStorageChange = () => {
-      console.log('💾 Laporan: LocalStorage berubah');
-      setRefreshKey(prev => prev + 1);
-    };
-
     window.addEventListener('nilaiUpdated', handleNilaiUpdate);
-    window.addEventListener('storage', handleStorageChange);
-
     return () => {
       window.removeEventListener('nilaiUpdated', handleNilaiUpdate);
-      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
-  // Filter mahasiswa by prodi (integrated: mockData + localStorage)
+  // Fetch prodi list from backend
   useEffect(() => {
-    const integratedMahasiswa = getIntegratedMahasiswaList(selectedProdi);
-    setFilteredMahasiswa(integratedMahasiswa);
-    
-    if (integratedMahasiswa.length > 0) {
-      // Keep current selection if still valid, otherwise select first
-      const currentExists = integratedMahasiswa.find(m => m.id === selectedMahasiswa);
-      if (!currentExists || !selectedMahasiswa) {
-        setSelectedMahasiswa(integratedMahasiswa[0].id);
-      }
+    const controller = new AbortController();
+    setLoadingProdi(true);
+
+    fetch(`${API_BASE}/prodi`, { signal: controller.signal })
+      .then(res => res.json())
+      .then((data: Prodi[]) => {
+        setProdiList(data);
+        if (data.length > 0 && !selectedProdi) {
+          setSelectedProdi(data[0]);
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching prodi:', err);
+        }
+      })
+      .finally(() => setLoadingProdi(false));
+
+    return () => controller.abort();
+  }, []);
+
+  // Fetch mahasiswa list when prodi changes
+  useEffect(() => {
+    if (!selectedProdi) {
+      setMahasiswaList([]);
+      return;
     }
-  }, [selectedProdi, refreshKey]); // Add refreshKey to refresh mahasiswa list on import
+
+    const controller = new AbortController();
+    setLoadingMahasiswa(true);
+
+    fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/mahasiswa-nilai`, { signal: controller.signal })
+      .then(res => res.json())
+      .then((data: MahasiswaSummary[]) => {
+        setMahasiswaList(data);
+        if (data.length > 0) {
+          // Keep current selection if still valid, otherwise select first
+          const currentExists = data.find(m => m.nim === selectedMahasiswa?.nim);
+          if (!currentExists) {
+            setSelectedMahasiswa(data[0]);
+          }
+        } else {
+          setSelectedMahasiswa(null);
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching mahasiswa:', err);
+          setMahasiswaList([]);
+        }
+      })
+      .finally(() => setLoadingMahasiswa(false));
+
+    return () => controller.abort();
+  }, [selectedProdi, refreshKey]);
 
   // Generate laporan based on view mode
   useEffect(() => {
-    if (viewMode === 'mahasiswa' && selectedMahasiswa) {
+    if (viewMode === 'mahasiswa' && selectedMahasiswa && selectedProdi) {
       generateLaporanMahasiswa();
-    } else if (viewMode === 'semester') {
+    } else if (viewMode === 'semester' && selectedProdi) {
       generateLaporanSemester();
-    } else if (viewMode === 'prodi') {
+    } else if (viewMode === 'prodi' && selectedProdi) {
       generateLaporanProdi();
     }
-  }, [viewMode, selectedMahasiswa, selectedProdi, selectedSemester, refreshKey]); // Add refreshKey
+  }, [viewMode, selectedMahasiswa, selectedProdi, selectedSemester, refreshKey]);
 
-  const generateLaporanMahasiswa = () => {
-    const mhs = filteredMahasiswa.find((m) => m.id === selectedMahasiswa);
-    if (!mhs) return;
+  const generateLaporanMahasiswa = async () => {
+    if (!selectedMahasiswa || !selectedProdi) return;
 
-    const cplScores = hitungNilaiCPLPerSemesterIntegrated(selectedMahasiswa, selectedSemester, mhs.prodiKode);
-    const nilaiMhs = getIntegratedNilaiByMahasiswa(selectedMahasiswa);
-    
-    // Get CPMK breakdown with bobot
-    const cpmkBreakdown = hitungCPMKBreakdownPerCPL(selectedMahasiswa, selectedSemester, mhs.prodiKode);
-    
-    // Group nilai by semester using integrated data
-    const groupedData = getNilaiGroupedBySemester(selectedMahasiswa, mhs.prodiKode);
-    
-    // Convert to format expected by component
-    const nilaiPerSemester: { [key: number]: any[] } = {};
-    Object.entries(groupedData).forEach(([sem, data]) => {
-      const semester = parseInt(sem);
-      nilaiPerSemester[semester] = data.nilai.map((nilai, idx) => ({
-        ...nilai,
-        mk: data.mataKuliah[idx]
-      }));
-    });
+    setLoadingLaporan(true);
 
-    // Calculate CPL trend across semesters
-    // Get all semesters that have nilai for this mahasiswa
-    const semestersWithNilai = new Set<number>();
-    Object.keys(groupedData).forEach(sem => {
-      semestersWithNilai.add(parseInt(sem));
-    });
-    
-    const trendData = [];
-    const maxSemester = mhs.semesterAktif || Math.max(...Array.from(semestersWithNilai), selectedSemester);
-    
-    for (let sem = 1; sem <= maxSemester; sem++) {
-      const cplSem = hitungNilaiCPLPerSemesterIntegrated(selectedMahasiswa, sem, mhs.prodiKode);
-      if (cplSem.length > 0) {
-        const avgCPL = cplSem.reduce((sum, c) => sum + c.nilai, 0) / cplSem.length;
-        trendData.push({
-          semester: `Sem ${sem}`,
-          'Rata-rata CPL': Math.round(avgCPL * 10) / 10
-        });
+    try {
+      // Fetch CPL scores for all semesters (1-8) in parallel
+      const semesterRequests = [];
+      for (let sem = 1; sem <= 8; sem++) {
+        semesterRequests.push(
+          fetch(`${API_BASE}/mahasiswa/${selectedMahasiswa.nim}/cpl?semester=${sem}`)
+            .then(res => res.ok ? res.json() : { cpl: [] })
+            .catch(() => ({ cpl: [] }))
+        );
       }
-    }
 
-    // Calculate overall CPL achievement across all semesters
-    const overallCPLAchievement: { [key: string]: { total: number; count: number } } = {};
-    
-    for (let sem = 1; sem <= maxSemester; sem++) {
-      const cplSem = hitungNilaiCPLPerSemesterIntegrated(selectedMahasiswa, sem, mhs.prodiKode);
-      cplSem.forEach((cpl) => {
-        if (!overallCPLAchievement[cpl.cplKode]) {
-          overallCPLAchievement[cpl.cplKode] = { total: 0, count: 0 };
+      const semesterResults = await Promise.all(semesterRequests);
+
+      // Build trend data and overall CPL achievement
+      const trendData: { semester: string; 'Rata-rata CPL': number }[] = [];
+      const overallCPLAchievement: { [key: string]: { total: number; count: number; deskripsi: string } } = {};
+
+      semesterResults.forEach((result, idx) => {
+        const sem = idx + 1;
+        const cplList: NilaiCPLItem[] = result.cpl || [];
+
+        if (cplList.length > 0) {
+          const avgCPL = cplList.reduce((sum, c) => sum + c.nilai_angka, 0) / cplList.length;
+          trendData.push({
+            semester: `Sem ${sem}`,
+            'Rata-rata CPL': Math.round(avgCPL * 10) / 10
+          });
+
+          // Accumulate for overall CPL
+          cplList.forEach(cpl => {
+            if (!overallCPLAchievement[cpl.kode_cpl]) {
+              overallCPLAchievement[cpl.kode_cpl] = {
+                total: 0,
+                count: 0,
+                deskripsi: cpl.deskripsi
+              };
+            }
+            overallCPLAchievement[cpl.kode_cpl].total += cpl.nilai_angka;
+            overallCPLAchievement[cpl.kode_cpl].count += 1;
+          });
         }
-        overallCPLAchievement[cpl.cplKode].total += cpl.nilai;
-        overallCPLAchievement[cpl.cplKode].count += 1;
       });
-    }
 
-    const cplOverallData = Object.entries(overallCPLAchievement).map(([kode, data]) => {
-      const cplInfo = cplData.find((c) => c.kode === kode && c.prodiKode === mhs.prodiKode);
-      return {
+      // Build overall CPL data
+      const cplOverallData = Object.entries(overallCPLAchievement).map(([kode, data]) => ({
         kode,
         avgNilai: data.count > 0 ? Math.round((data.total / data.count) * 10) / 10 : 0,
-        deskripsi: cplInfo?.deskripsi || '',
+        deskripsi: data.deskripsi,
         jumlahSemester: data.count,
-      };
-    });
+      }));
 
-    // Prepare radar chart data
-    const radarData = cplOverallData.map((cpl) => ({
-      subject: cpl.kode,
-      value: cpl.avgNilai,
-      fullMark: 100,
-    }));
+      // Get current semester CPL scores
+      const currentSemesterResult = semesterResults[selectedSemester - 1];
+      const cplScores: NilaiCPLItem[] = currentSemesterResult?.cpl || [];
 
-    setLaporanData({
-      mahasiswa: mhs,
-      cplScores,
-      cpmkBreakdown,
-      nilaiPerSemester,
-      trendData,
-      cplOverallData,
-      radarData,
-      totalMK: nilaiMhs.length,
-      avgCPL: cplScores.length > 0 
-        ? Math.round((cplScores.reduce((sum, c) => sum + c.nilai, 0) / cplScores.length) * 10) / 10 
-        : 0,
-    });
-  };
+      // Prepare radar chart data
+      const radarData = cplOverallData.map((cpl) => ({
+        subject: cpl.kode,
+        value: cpl.avgNilai,
+        fullMark: 100,
+      }));
 
-  const generateLaporanSemester = () => {
-    const mahasiswaProdi = getIntegratedMahasiswaList(selectedProdi);
-    const mkSemester = mataKuliahData.filter(
-      (mk) => mk.prodiKode === selectedProdi && mk.semester === selectedSemester
-    );
-
-    // Calculate average CPL for all students in this semester
-    const allCPLScores: { [key: string]: number[] } = {};
-    
-    mahasiswaProdi.forEach((mhs) => {
-      const cplScores = hitungNilaiCPLPerSemesterIntegrated(mhs.id, selectedSemester, selectedProdi);
-      cplScores.forEach((cpl) => {
-        if (!allCPLScores[cpl.cplKode]) {
-          allCPLScores[cpl.cplKode] = [];
-        }
-        allCPLScores[cpl.cplKode].push(cpl.nilai);
+      setLaporanData({
+        mahasiswa: selectedMahasiswa,
+        cplScores: cplScores.map(c => ({
+          cplKode: c.kode_cpl,
+          cplDeskripsi: c.deskripsi,
+          nilai: c.nilai_angka,
+        })),
+        cpmkBreakdown: [], // CPMK breakdown would need additional endpoint
+        nilaiPerSemester: {}, // Would need additional endpoint for MK grades
+        trendData,
+        cplOverallData,
+        radarData,
+        avgCPL: cplScores.length > 0
+          ? Math.round((cplScores.reduce((sum, c) => sum + c.nilai_angka, 0) / cplScores.length) * 10) / 10
+          : 0,
       });
-    });
-
-    const avgCPLBySemester = Object.entries(allCPLScores).map(([kode, values]) => ({
-      kode,
-      avgNilai: values.length > 0 
-        ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 
-        : 0,
-      jumlahMahasiswa: values.length,
-      deskripsi: cplData.find((c) => c.kode === kode && c.prodiKode === selectedProdi)?.deskripsi || '',
-    }));
-
-    setLaporanData({
-      semester: selectedSemester,
-      mataKuliah: mkSemester,
-      avgCPL: avgCPLBySemester,
-      totalMahasiswa: mahasiswaProdi.length,
-      totalSKS: mkSemester.reduce((sum, mk) => sum + mk.sks, 0),
-    });
+    } catch (err) {
+      console.error('Error generating laporan mahasiswa:', err);
+    } finally {
+      setLoadingLaporan(false);
+    }
   };
 
-  const generateLaporanProdi = () => {
-    const mahasiswaProdi = getIntegratedMahasiswaList(selectedProdi);
-    const mkProdi = mataKuliahData.filter((mk) => mk.prodiKode === selectedProdi);
+  // TODO: Integrate with backend when endpoints are ready
+  const generateLaporanSemester = async () => {
+    if (!selectedProdi) return;
 
-    // Calculate overall statistics - count all nilai (integrated)
-    const allNilaiCount = mahasiswaProdi.reduce((count, mhs) => {
-      return count + getIntegratedNilaiByMahasiswa(mhs.id).length;
-    }, 0);
+    setLoadingLaporan(true);
+    try {
+      // Fetch CPL stats for this semester
+      const res = await fetch(
+        `${API_BASE}/prodi/${selectedProdi.id_prodi}/cpl-stats?semester=${selectedSemester}`
+      );
+      if (!res.ok) throw new Error('Failed to fetch CPL stats');
+      const cplStats: CPLStatItem[] = await res.json();
 
-    // CPL achievement across all students
-    const cplAchievement: { [key: string]: { total: number; count: number } } = {};
-    
-    mahasiswaProdi.forEach((mhs) => {
-      // For integrated mahasiswa, calculate all available semesters (1-8)
-      for (let sem = 1; sem <= 8; sem++) {
-        const cplScores = hitungNilaiCPLPerSemesterIntegrated(mhs.id, sem, selectedProdi);
-        cplScores.forEach((cpl) => {
-          if (!cplAchievement[cpl.cplKode]) {
-            cplAchievement[cpl.cplKode] = { total: 0, count: 0 };
-          }
-          cplAchievement[cpl.cplKode].total += cpl.nilai;
-          cplAchievement[cpl.cplKode].count += 1;
-        });
-      }
-    });
+      setLaporanData({
+        semester: selectedSemester,
+        mataKuliah: [], // Would need /prodi/:id/mk endpoint  
+        avgCPL: cplStats.map(s => ({
+          kode: s.kode_cpl,
+          avgNilai: Math.round(s.rata_nilai * 10) / 10,
+          jumlahMahasiswa: s.jumlah_mahasiswa,
+          deskripsi: s.deskripsi,
+        })),
+        totalMahasiswa: mahasiswaList.length,
+        totalSKS: 0, // Would need MK data
+      });
+    } catch (err) {
+      console.error('Error generating laporan semester:', err);
+    } finally {
+      setLoadingLaporan(false);
+    }
+  };
 
-    const avgCPLProdi = Object.entries(cplAchievement).map(([kode, data]) => ({
-      kode,
-      avgNilai: data.count > 0 
-        ? Math.round((data.total / data.count) * 10) / 10 
-        : 0,
-      deskripsi: cplData.find((c) => c.kode === kode && c.prodiKode === selectedProdi)?.deskripsi || '',
-    }));
+  // TODO: Integrate with backend when endpoints are ready
+  const generateLaporanProdi = async () => {
+    if (!selectedProdi) return;
 
-    // Distribution by semester
-    const distribusiSemester = Array.from({ length: 8 }, (_, i) => {
-      const sem = i + 1;
-      const count = mahasiswaProdi.filter((m) => m.semesterAktif === sem || !m.semesterAktif).length;
-      return { semester: `Sem ${sem}`, jumlah: count };
-    });
+    setLoadingLaporan(true);
+    try {
+      // Fetch CPL stats without semester filter (overall)
+      const res = await fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/cpl-stats`);
+      if (!res.ok) throw new Error('Failed to fetch CPL stats');
+      const cplStats: CPLStatItem[] = await res.json();
 
-    setLaporanData({
-      prodi: prodiData.find((p) => p.kode === selectedProdi),
-      totalMahasiswa: mahasiswaProdi.length,
-      totalMK: mkProdi.length,
-      avgCPL: avgCPLProdi,
-      distribusiSemester,
-      totalNilai: allNilaiCount,
-    });
+      setLaporanData({
+        prodi: selectedProdi,
+        totalMahasiswa: mahasiswaList.length,
+        totalMK: 0, // Would need /prodi/:id/mk endpoint
+        avgCPL: cplStats.map(s => ({
+          kode: s.kode_cpl,
+          avgNilai: Math.round(s.rata_nilai * 10) / 10,
+          deskripsi: s.deskripsi,
+        })),
+        distribusiSemester: [], // Would need student data by semester
+        totalNilai: 0,
+      });
+    } catch (err) {
+      console.error('Error generating laporan prodi:', err);
+    } finally {
+      setLoadingLaporan(false);
+    }
   };
 
   const handleExport = (format: 'pdf' | 'excel') => {
@@ -264,31 +324,28 @@ export default function LaporanPage() {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setViewMode('mahasiswa')}
-            className={`px-6 py-2.5 rounded-lg font-medium transition-all ${
-              viewMode === 'mahasiswa'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+            className={`px-6 py-2.5 rounded-lg font-medium transition-all ${viewMode === 'mahasiswa'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
           >
             Per Mahasiswa
           </button>
           <button
             onClick={() => setViewMode('semester')}
-            className={`px-6 py-2.5 rounded-lg font-medium transition-all ${
-              viewMode === 'semester'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+            className={`px-6 py-2.5 rounded-lg font-medium transition-all ${viewMode === 'semester'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
           >
             Per Semester
           </button>
           <button
             onClick={() => setViewMode('prodi')}
-            className={`px-6 py-2.5 rounded-lg font-medium transition-all ${
-              viewMode === 'prodi'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+            className={`px-6 py-2.5 rounded-lg font-medium transition-all ${viewMode === 'prodi'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
           >
             Per Prodi
           </button>
@@ -323,18 +380,24 @@ export default function LaporanPage() {
               Program Studi
             </label>
             <select
-              value={selectedProdi}
+              value={selectedProdi?.id_prodi ?? ''}
               onChange={(e) => {
-                setSelectedProdi(e.target.value);
-                setSelectedMahasiswa('');
+                const prodi = prodiList.find(p => p.id_prodi === Number(e.target.value));
+                setSelectedProdi(prodi ?? null);
+                setSelectedMahasiswa(null);
               }}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              disabled={loadingProdi}
             >
-              {prodiData.map((prodi) => (
-                <option key={prodi.kode} value={prodi.kode}>
-                  {prodi.nama}
-                </option>
-              ))}
+              {loadingProdi ? (
+                <option>Loading...</option>
+              ) : (
+                prodiList.map((prodi) => (
+                  <option key={prodi.id_prodi} value={prodi.id_prodi}>
+                    {prodi.nama_prodi}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -363,16 +426,25 @@ export default function LaporanPage() {
                 Mahasiswa
               </label>
               <select
-                value={selectedMahasiswa}
-                onChange={(e) => setSelectedMahasiswa(e.target.value)}
+                value={selectedMahasiswa?.nim ?? ''}
+                onChange={(e) => {
+                  const mhs = mahasiswaList.find(m => m.nim === e.target.value);
+                  setSelectedMahasiswa(mhs ?? null);
+                }}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                disabled={filteredMahasiswa.length === 0}
+                disabled={loadingMahasiswa || mahasiswaList.length === 0}
               >
-                {filteredMahasiswa.map((mhs) => (
-                  <option key={mhs.id} value={mhs.id}>
-                    {mhs.npm} - {mhs.nama}
-                  </option>
-                ))}
+                {loadingMahasiswa ? (
+                  <option>Loading...</option>
+                ) : mahasiswaList.length === 0 ? (
+                  <option>Tidak ada data mahasiswa</option>
+                ) : (
+                  mahasiswaList.map((mhs) => (
+                    <option key={mhs.nim} value={mhs.nim}>
+                      {mhs.nim} - {mhs.nama}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           )}
@@ -402,10 +474,10 @@ export default function LaporanPage() {
                 <p className="font-bold text-2xl">
                   {laporanData.cplOverallData && laporanData.cplOverallData.length > 0
                     ? Math.round(
-                        (laporanData.cplOverallData.reduce((sum: number, c: any) => sum + c.avgNilai, 0) /
-                          laporanData.cplOverallData.length) *
-                          10
-                      ) / 10
+                      (laporanData.cplOverallData.reduce((sum: number, c: any) => sum + c.avgNilai, 0) /
+                        laporanData.cplOverallData.length) *
+                      10
+                    ) / 10
                     : laporanData.avgCPL}
                 </p>
               </div>
@@ -417,11 +489,10 @@ export default function LaporanPage() {
             <div className="flex border-b border-gray-200">
               <button
                 onClick={() => setMahasiswaViewTab('keseluruhan')}
-                className={`flex-1 px-6 py-4 font-medium transition-all ${
-                  mahasiswaViewTab === 'keseluruhan'
-                    ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                className={`flex-1 px-6 py-4 font-medium transition-all ${mahasiswaViewTab === 'keseluruhan'
+                  ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:bg-gray-50'
+                  }`}
               >
                 <div className="flex items-center justify-center space-x-2">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -432,11 +503,10 @@ export default function LaporanPage() {
               </button>
               <button
                 onClick={() => setMahasiswaViewTab('persemester')}
-                className={`flex-1 px-6 py-4 font-medium transition-all ${
-                  mahasiswaViewTab === 'persemester'
-                    ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+                className={`flex-1 px-6 py-4 font-medium transition-all ${mahasiswaViewTab === 'persemester'
+                  ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-600 hover:bg-gray-50'
+                  }`}
               >
                 <div className="flex items-center justify-center space-x-2">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -487,167 +557,166 @@ export default function LaporanPage() {
 
               {/* Overall CPL Achievement - New Chart */}
               {laporanData.cplOverallData && laporanData.cplOverallData.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100">
-                <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  Capaian CPL Keseluruhan (Semua Semester)
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Visualisasi pencapaian rata-rata untuk setiap CPL dari seluruh semester yang telah diselesaikan
-                </p>
-              </div>
-
-              <div className="p-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Radar Chart */}
-                  <div className="flex flex-col">
-                    <h4 className="text-md font-semibold text-gray-700 mb-4 text-center">
-                      Radar Chart - Profil CPL
-                    </h4>
-                    <ResponsiveContainer width="100%" height={400}>
-                      <RadarChart data={laporanData.radarData}>
-                        <PolarGrid stroke="#e5e7eb" />
-                        <PolarAngleAxis 
-                          dataKey="subject" 
-                          stroke="#6b7280"
-                          tick={{ fill: '#374151', fontSize: 12 }}
-                        />
-                        <PolarRadiusAxis 
-                          domain={[0, 100]} 
-                          stroke="#6b7280"
-                          tick={{ fill: '#6b7280', fontSize: 10 }}
-                        />
-                        <Radar 
-                          name="Nilai CPL" 
-                          dataKey="value" 
-                          stroke="#2563eb" 
-                          fill="#2563eb" 
-                          fillOpacity={0.6} 
-                        />
-                        <Tooltip 
-                          contentStyle={{
-                            backgroundColor: '#fff',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                          }}
-                        />
-                        <Legend />
-                      </RadarChart>
-                    </ResponsiveContainer>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                      Capaian CPL Keseluruhan (Semua Semester)
+                    </h3>
+                    <p className="text-sm text-gray-600">
+                      Visualisasi pencapaian rata-rata untuk setiap CPL dari seluruh semester yang telah diselesaikan
+                    </p>
                   </div>
 
-                  {/* Bar Chart */}
-                  <div className="flex flex-col">
-                    <h4 className="text-md font-semibold text-gray-700 mb-4 text-center">
-                      Bar Chart - Perbandingan CPL
-                    </h4>
-                    <ResponsiveContainer width="100%" height={400}>
-                      <BarChart data={laporanData.cplOverallData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis 
-                          dataKey="kode" 
-                          stroke="#6b7280"
-                          tick={{ fill: '#374151', fontSize: 11 }}
-                        />
-                        <YAxis 
-                          domain={[0, 100]} 
-                          stroke="#6b7280"
-                          tick={{ fill: '#6b7280' }}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#fff',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                          }}
-                          formatter={(value: any) => [`${value}`, 'Nilai']}
-                        />
-                        <Legend />
-                        <Bar 
-                          dataKey="avgNilai" 
-                          fill="#2563eb" 
-                          radius={[8, 8, 0, 0]} 
-                          name="Rata-rata Nilai"
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Radar Chart */}
+                      <div className="flex flex-col">
+                        <h4 className="text-md font-semibold text-gray-700 mb-4 text-center">
+                          Radar Chart - Profil CPL
+                        </h4>
+                        <ResponsiveContainer width="100%" height={400}>
+                          <RadarChart data={laporanData.radarData}>
+                            <PolarGrid stroke="#e5e7eb" />
+                            <PolarAngleAxis
+                              dataKey="subject"
+                              stroke="#6b7280"
+                              tick={{ fill: '#374151', fontSize: 12 }}
+                            />
+                            <PolarRadiusAxis
+                              domain={[0, 100]}
+                              stroke="#6b7280"
+                              tick={{ fill: '#6b7280', fontSize: 10 }}
+                            />
+                            <Radar
+                              name="Nilai CPL"
+                              dataKey="value"
+                              stroke="#2563eb"
+                              fill="#2563eb"
+                              fillOpacity={0.6}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#fff',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                              }}
+                            />
+                            <Legend />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
 
-                {/* CPL Details Table */}
-                <div className="mt-6">
-                  <h4 className="text-md font-semibold text-gray-700 mb-3">
-                    Detail Capaian Per CPL
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
-                      <thead className="bg-gradient-to-r from-blue-100 to-blue-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Kode CPL</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Deskripsi</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Rata-rata Nilai</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Semester Terkait</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {laporanData.cplOverallData.map((cpl: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <span className="font-semibold text-blue-600">{cpl.kode}</span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-700">
-                              {cpl.deskripsi}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-800">
-                                {cpl.avgNilai}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {cpl.jumlahSemester} semester
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span
-                                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
-                                  cpl.avgNilai >= 75
-                                    ? 'bg-green-100 text-green-800'
-                                    : cpl.avgNilai >= 60
-                                    ? 'bg-yellow-100 text-yellow-800'
-                                    : 'bg-red-100 text-red-800'
-                                }`}
-                              >
-                                {cpl.avgNilai >= 75 ? '✓ Tercapai' : cpl.avgNilai >= 60 ? '~ Cukup' : '✗ Belum Tercapai'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                      {/* Bar Chart */}
+                      <div className="flex flex-col">
+                        <h4 className="text-md font-semibold text-gray-700 mb-4 text-center">
+                          Bar Chart - Perbandingan CPL
+                        </h4>
+                        <ResponsiveContainer width="100%" height={400}>
+                          <BarChart data={laporanData.cplOverallData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                            <XAxis
+                              dataKey="kode"
+                              stroke="#6b7280"
+                              tick={{ fill: '#374151', fontSize: 11 }}
+                            />
+                            <YAxis
+                              domain={[0, 100]}
+                              stroke="#6b7280"
+                              tick={{ fill: '#6b7280' }}
+                            />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#fff',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                              }}
+                              formatter={(value: any) => [`${value}`, 'Nilai']}
+                            />
+                            <Legend />
+                            <Bar
+                              dataKey="avgNilai"
+                              fill="#2563eb"
+                              radius={[8, 8, 0, 0]}
+                              name="Rata-rata Nilai"
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
 
-                  {/* Summary Info */}
-                  <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-                    <div className="flex items-start space-x-2">
-                      <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div className="text-sm text-gray-700">
-                        <p className="font-semibold mb-1">Catatan Perhitungan:</p>
-                        <ul className="list-disc list-inside space-y-1 text-xs">
-                          <li>Nilai CPL dihitung dari rata-rata seluruh semester yang telah diselesaikan</li>
-                          <li>CPL yang muncul di beberapa semester akan dirata-ratakan untuk mendapatkan nilai keseluruhan</li>
-                          <li>Status Tercapai: ≥75 | Cukup: 60-74 | Belum Tercapai: &lt;60</li>
-                        </ul>
+                    {/* CPL Details Table */}
+                    <div className="mt-6">
+                      <h4 className="text-md font-semibold text-gray-700 mb-3">
+                        Detail Capaian Per CPL
+                      </h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
+                          <thead className="bg-gradient-to-r from-blue-100 to-blue-200">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Kode CPL</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Deskripsi</th>
+                              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Rata-rata Nilai</th>
+                              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Semester Terkait</th>
+                              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {laporanData.cplOverallData.map((cpl: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span className="font-semibold text-blue-600">{cpl.kode}</span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">
+                                  {cpl.deskripsi}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-800">
+                                    {cpl.avgNilai}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    {cpl.jumlahSemester} semester
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span
+                                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${cpl.avgNilai >= 75
+                                      ? 'bg-green-100 text-green-800'
+                                      : cpl.avgNilai >= 60
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : 'bg-red-100 text-red-800'
+                                      }`}
+                                  >
+                                    {cpl.avgNilai >= 75 ? '✓ Tercapai' : cpl.avgNilai >= 60 ? '~ Cukup' : '✗ Belum Tercapai'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Summary Info */}
+                      <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
+                        <div className="flex items-start space-x-2">
+                          <svg className="w-5 h-5 text-blue-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div className="text-sm text-gray-700">
+                            <p className="font-semibold mb-1">Catatan Perhitungan:</p>
+                            <ul className="list-disc list-inside space-y-1 text-xs">
+                              <li>Nilai CPL dihitung dari rata-rata seluruh semester yang telah diselesaikan</li>
+                              <li>CPL yang muncul di beberapa semester akan dirata-ratakan untuk mendapatkan nilai keseluruhan</li>
+                              <li>Status Tercapai: ≥75 | Cukup: 60-74 | Belum Tercapai: &lt;60</li>
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )}
             </div>
           ) : (
             <div className="space-y-6">
@@ -663,229 +732,227 @@ export default function LaporanPage() {
                 </div>
               </div>
 
-          {/* CPL Scores Table with CPMK Breakdown */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="p-6 border-b border-gray-200 bg-blue-50">
-              <h3 className="text-lg font-semibold text-gray-800">
-                Detail CPL Semester {selectedSemester}
-              </h3>
-              <p className="text-sm text-gray-600 mt-1">
-                Klik pada baris CPL untuk melihat breakdown CPMK dan bobot
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              {laporanData.cpmkBreakdown && laporanData.cpmkBreakdown.length > 0 ? (
-                <div className="divide-y divide-gray-200">
-                  {laporanData.cpmkBreakdown.map((cpl: any, idx: number) => (
-                    <div key={idx} className="border-b border-gray-200 last:border-b-0">
-                      {/* CPL Header - Clickable */}
-                      <div
-                        className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => setExpandedCPL(expandedCPL === cpl.cplKode ? null : cpl.cplKode)}
-                      >
-                        <div className="flex items-center space-x-4 flex-1">
-                          <div className="flex items-center space-x-2">
-                            <svg
-                              className={`w-5 h-5 text-gray-500 transition-transform ${
-                                expandedCPL === cpl.cplKode ? 'rotate-90' : ''
-                              }`}
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            <span className="font-semibold text-blue-600">{cpl.cplKode}</span>
-                          </div>
-                          <span className="text-gray-700 flex-1">{cpl.cplDeskripsi}</span>
-                        </div>
-                        <div className="flex items-center space-x-4">
-                          <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-semibold bg-blue-100 text-blue-800">
-                            {cpl.nilaiCPL}
-                          </span>
-                          <span
-                            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                              cpl.nilaiCPL >= 75
-                                ? 'bg-green-100 text-green-800'
-                                : cpl.nilaiCPL >= 60
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
+              {/* CPL Scores Table with CPMK Breakdown */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-blue-50">
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Detail CPL Semester {selectedSemester}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Klik pada baris CPL untuk melihat breakdown CPMK dan bobot
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  {laporanData.cpmkBreakdown && laporanData.cpmkBreakdown.length > 0 ? (
+                    <div className="divide-y divide-gray-200">
+                      {laporanData.cpmkBreakdown.map((cpl: any, idx: number) => (
+                        <div key={idx} className="border-b border-gray-200 last:border-b-0">
+                          {/* CPL Header - Clickable */}
+                          <div
+                            className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                            onClick={() => setExpandedCPL(expandedCPL === cpl.cplKode ? null : cpl.cplKode)}
                           >
-                            {cpl.nilaiCPL >= 75 ? 'Tercapai' : cpl.nilaiCPL >= 60 ? 'Cukup' : 'Belum Tercapai'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* CPMK Breakdown - Expandable */}
-                      {expandedCPL === cpl.cplKode && (
-                        <div className="bg-gray-50 px-6 py-4 space-y-4">
-                          {/* Header with CPL Info */}
-                          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                            <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-4 flex-1">
                               <div className="flex items-center space-x-2">
-                                <div className="w-1 h-6 bg-blue-500 rounded"></div>
-                                <h4 className="font-semibold text-gray-800">
-                                  Breakdown Mata Kuliah & CPMK untuk {cpl.cplKode}
-                                </h4>
+                                <svg
+                                  className={`w-5 h-5 text-gray-500 transition-transform ${expandedCPL === cpl.cplKode ? 'rotate-90' : ''
+                                    }`}
+                                  fill="none"
+                                  viewBox="0 0 24 24"
+                                  stroke="currentColor"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                                <span className="font-semibold text-blue-600">{cpl.cplKode}</span>
                               </div>
-                              <span className="text-sm font-semibold text-blue-600">
-                                Total: {cpl.totalMKTerkait} MK Terkait
+                              <span className="text-gray-700 flex-1">{cpl.cplDeskripsi}</span>
+                            </div>
+                            <div className="flex items-center space-x-4">
+                              <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-semibold bg-blue-100 text-blue-800">
+                                {cpl.nilaiCPL}
+                              </span>
+                              <span
+                                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cpl.nilaiCPL >= 75
+                                  ? 'bg-green-100 text-green-800'
+                                  : cpl.nilaiCPL >= 60
+                                    ? 'bg-yellow-100 text-yellow-800'
+                                    : 'bg-red-100 text-red-800'
+                                  }`}
+                              >
+                                {cpl.nilaiCPL >= 75 ? 'Tercapai' : cpl.nilaiCPL >= 60 ? 'Cukup' : 'Belum Tercapai'}
                               </span>
                             </div>
-                            <div className="text-sm text-gray-600">
-                              <p>• Bobot per MK: <span className="font-semibold text-gray-800">{cpl.bobotMKPerCPL}%</span> (100% ÷ {cpl.totalMKTerkait} MK)</p>
-                              <p>• MK di semester ini: <span className="font-semibold text-gray-800">{cpl.mataKuliah.length}</span></p>
-                            </div>
                           </div>
-                          
-                          {cpl.mataKuliah.map((mk: any, mkIdx: number) => (
-                            <div key={mkIdx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                              {/* MK Header */}
-                              <div className="bg-gradient-to-r from-green-50 to-green-100 px-4 py-3 border-b border-green-200">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-3">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
-                                    <div>
-                                      <span className="font-semibold text-gray-800">{mk.mkKode}</span>
-                                      <span className="text-gray-600 ml-2">- {mk.mkNama}</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center space-x-4">
-                                    <span className="text-sm text-gray-600">{mk.sks} SKS</span>
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-200 text-green-800">
-                                      Bobot: {mk.bobotMK}%
-                                    </span>
-                                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-600 text-white">
-                                      Nilai: {mk.nilaiMK}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
 
-                              {/* CPMK List */}
-                              <div className="p-4">
-                                <div className="text-xs text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded">
-                                  <strong>Perhitungan CPMK:</strong> {mk.bobotMK}% (bobot MK) ÷ {mk.cpmkList.length} CPMK = {mk.cpmkList[0]?.bobot}% per CPMK
-                                </div>
-                                <table className="w-full">
-                                  <thead>
-                                    <tr className="text-xs text-gray-500 border-b border-gray-200">
-                                      <th className="pb-2 text-left font-medium">CPMK</th>
-                                      <th className="pb-2 text-left font-medium">Deskripsi</th>
-                                      <th className="pb-2 text-center font-medium">Bobot (%)</th>
-                                      <th className="pb-2 text-right font-medium">Nilai Tertimbang</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                    {mk.cpmkList.map((cpmk: any, cpmkIdx: number) => (
-                                      <tr key={cpmkIdx} className="text-sm">
-                                        <td className="py-2 pr-4">
-                                          <div className="flex items-center space-x-2">
-                                            <div className="w-2 h-2 rounded-full bg-purple-400"></div>
-                                            <span className="font-medium text-purple-600">
-                                              {cpmk.cpmkKode.length > 20 
-                                                ? cpmk.cpmkKode.substring(0, 20) + '...' 
-                                                : cpmk.cpmkKode}
-                                            </span>
-                                          </div>
-                                        </td>
-                                        <td className="py-2 text-gray-700">
-                                          {cpmk.deskripsi}
-                                        </td>
-                                        <td className="py-2 text-center">
-                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                                            {cpmk.bobot}%
-                                          </span>
-                                        </td>
-                                        <td className="py-2 text-right font-semibold text-gray-900">
-                                          {cpmk.nilaiWeighted}
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                                
-                                {/* Summary */}
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="flex justify-between items-center text-sm">
-                                    <span className="text-gray-600">
-                                      Total Bobot CPMK:
-                                    </span>
-                                    <span className="font-semibold text-gray-900">
-                                      {mk.cpmkList.reduce((sum: number, c: any) => sum + c.bobot, 0).toFixed(2)}%
-                                    </span>
+                          {/* CPMK Breakdown - Expandable */}
+                          {expandedCPL === cpl.cplKode && (
+                            <div className="bg-gray-50 px-6 py-4 space-y-4">
+                              {/* Header with CPL Info */}
+                              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="w-1 h-6 bg-blue-500 rounded"></div>
+                                    <h4 className="font-semibold text-gray-800">
+                                      Breakdown Mata Kuliah & CPMK untuk {cpl.cplKode}
+                                    </h4>
                                   </div>
-                                  <div className="flex justify-between items-center text-sm mt-1">
-                                    <span className="text-gray-600">
-                                      Kontribusi MK ke {cpl.cplKode}:
-                                    </span>
-                                    <span className="text-base font-bold text-green-600">
-                                      {mk.nilaiMK} × {mk.bobotMK}% = {Math.round(mk.nilaiMK * mk.bobotMK / 100 * 100) / 100}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-
-                          {/* CPL Summary */}
-                          <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                            <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                <div className="flex items-center space-x-2">
-                                  <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                  </svg>
-                                  <span className="font-semibold text-gray-800">
-                                    Perhitungan Nilai {cpl.cplKode}
+                                  <span className="text-sm font-semibold text-blue-600">
+                                    Total: {cpl.totalMKTerkait} MK Terkait
                                   </span>
                                 </div>
-                                <span className="text-2xl font-bold text-blue-600">{cpl.nilaiCPL}</span>
+                                <div className="text-sm text-gray-600">
+                                  <p>• Bobot per MK: <span className="font-semibold text-gray-800">{cpl.bobotMKPerCPL}%</span> (100% ÷ {cpl.totalMKTerkait} MK)</p>
+                                  <p>• MK di semester ini: <span className="font-semibold text-gray-800">{cpl.mataKuliah.length}</span></p>
+                                </div>
                               </div>
-                              <div className="text-sm text-gray-700 space-y-1 bg-white rounded px-3 py-2">
-                                <p>• MK di semester ini: {cpl.mataKuliah.length} dari {cpl.totalMKTerkait} total MK</p>
-                                <p>• Formula: Rata-rata nilai dari semua MK yang terkait</p>
-                                <p className="font-mono text-xs bg-gray-50 px-2 py-1 rounded mt-1">
-                                  ({cpl.mataKuliah.map((mk: any) => mk.nilaiMK).join(' + ')}) ÷ {cpl.mataKuliah.length} = <span className="font-bold text-blue-600">{cpl.nilaiCPL}</span>
-                                </p>
+
+                              {cpl.mataKuliah.map((mk: any, mkIdx: number) => (
+                                <div key={mkIdx} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                  {/* MK Header */}
+                                  <div className="bg-gradient-to-r from-green-50 to-green-100 px-4 py-3 border-b border-green-200">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-3">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                                        <div>
+                                          <span className="font-semibold text-gray-800">{mk.mkKode}</span>
+                                          <span className="text-gray-600 ml-2">- {mk.mkNama}</span>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center space-x-4">
+                                        <span className="text-sm text-gray-600">{mk.sks} SKS</span>
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-green-200 text-green-800">
+                                          Bobot: {mk.bobotMK}%
+                                        </span>
+                                        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-600 text-white">
+                                          Nilai: {mk.nilaiMK}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* CPMK List */}
+                                  <div className="p-4">
+                                    <div className="text-xs text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded">
+                                      <strong>Perhitungan CPMK:</strong> {mk.bobotMK}% (bobot MK) ÷ {mk.cpmkList.length} CPMK = {mk.cpmkList[0]?.bobot}% per CPMK
+                                    </div>
+                                    <table className="w-full">
+                                      <thead>
+                                        <tr className="text-xs text-gray-500 border-b border-gray-200">
+                                          <th className="pb-2 text-left font-medium">CPMK</th>
+                                          <th className="pb-2 text-left font-medium">Deskripsi</th>
+                                          <th className="pb-2 text-center font-medium">Bobot (%)</th>
+                                          <th className="pb-2 text-right font-medium">Nilai Tertimbang</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100">
+                                        {mk.cpmkList.map((cpmk: any, cpmkIdx: number) => (
+                                          <tr key={cpmkIdx} className="text-sm">
+                                            <td className="py-2 pr-4">
+                                              <div className="flex items-center space-x-2">
+                                                <div className="w-2 h-2 rounded-full bg-purple-400"></div>
+                                                <span className="font-medium text-purple-600">
+                                                  {cpmk.cpmkKode.length > 20
+                                                    ? cpmk.cpmkKode.substring(0, 20) + '...'
+                                                    : cpmk.cpmkKode}
+                                                </span>
+                                              </div>
+                                            </td>
+                                            <td className="py-2 text-gray-700">
+                                              {cpmk.deskripsi}
+                                            </td>
+                                            <td className="py-2 text-center">
+                                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                {cpmk.bobot}%
+                                              </span>
+                                            </td>
+                                            <td className="py-2 text-right font-semibold text-gray-900">
+                                              {cpmk.nilaiWeighted}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+
+                                    {/* Summary */}
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <div className="flex justify-between items-center text-sm">
+                                        <span className="text-gray-600">
+                                          Total Bobot CPMK:
+                                        </span>
+                                        <span className="font-semibold text-gray-900">
+                                          {mk.cpmkList.reduce((sum: number, c: any) => sum + c.bobot, 0).toFixed(2)}%
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center text-sm mt-1">
+                                        <span className="text-gray-600">
+                                          Kontribusi MK ke {cpl.cplKode}:
+                                        </span>
+                                        <span className="text-base font-bold text-green-600">
+                                          {mk.nilaiMK} × {mk.bobotMK}% = {Math.round(mk.nilaiMK * mk.bobotMK / 100 * 100) / 100}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+
+                              {/* CPL Summary */}
+                              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                <div className="space-y-2">
+                                  <div className="flex justify-between items-center">
+                                    <div className="flex items-center space-x-2">
+                                      <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                      </svg>
+                                      <span className="font-semibold text-gray-800">
+                                        Perhitungan Nilai {cpl.cplKode}
+                                      </span>
+                                    </div>
+                                    <span className="text-2xl font-bold text-blue-600">{cpl.nilaiCPL}</span>
+                                  </div>
+                                  <div className="text-sm text-gray-700 space-y-1 bg-white rounded px-3 py-2">
+                                    <p>• MK di semester ini: {cpl.mataKuliah.length} dari {cpl.totalMKTerkait} total MK</p>
+                                    <p>• Formula: Rata-rata nilai dari semua MK yang terkait</p>
+                                    <p className="font-mono text-xs bg-gray-50 px-2 py-1 rounded mt-1">
+                                      ({cpl.mataKuliah.map((mk: any) => mk.nilaiMK).join(' + ')}) ÷ {cpl.mataKuliah.length} = <span className="font-bold text-blue-600">{cpl.nilaiCPL}</span>
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          )}
                         </div>
-                      )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center text-gray-500">
+                      <p>Belum ada data CPMK untuk semester ini</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* MK yang sudah diambil */}
+              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                  Mata Kuliah yang Sudah Diselesaikan
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Object.entries(laporanData.nilaiPerSemester).map(([sem, nilai]: [string, any]) => (
+                    <div key={sem} className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-blue-600 mb-2">Semester {sem}</h4>
+                      <ul className="space-y-1 text-sm">
+                        {nilai.map((n: any, idx: number) => (
+                          <li key={idx} className="flex justify-between">
+                            <span className="text-gray-700">{n.mk.nama}</span>
+                            <span className="font-semibold text-gray-900">{n.nilaiAkhir}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="p-8 text-center text-gray-500">
-                  <p>Belum ada data CPMK untuk semester ini</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* MK yang sudah diambil */}
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Mata Kuliah yang Sudah Diselesaikan
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Object.entries(laporanData.nilaiPerSemester).map(([sem, nilai]: [string, any]) => (
-                <div key={sem} className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-semibold text-blue-600 mb-2">Semester {sem}</h4>
-                  <ul className="space-y-1 text-sm">
-                    {nilai.map((n: any, idx: number) => (
-                      <li key={idx} className="flex justify-between">
-                        <span className="text-gray-700">{n.mk.nama}</span>
-                        <span className="font-semibold text-gray-900">{n.nilaiAkhir}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </div>
+              </div>
             </div>
           )}
         </div>
@@ -1117,13 +1184,12 @@ export default function LaporanPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            cpl.avgNilai >= 75
-                              ? 'bg-green-100 text-green-800'
-                              : cpl.avgNilai >= 60
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cpl.avgNilai >= 75
+                            ? 'bg-green-100 text-green-800'
+                            : cpl.avgNilai >= 60
                               ? 'bg-yellow-100 text-yellow-800'
                               : 'bg-red-100 text-red-800'
-                          }`}
+                            }`}
                         >
                           {cpl.avgNilai >= 75 ? 'Tercapai' : cpl.avgNilai >= 60 ? 'Cukup' : 'Belum Tercapai'}
                         </span>
