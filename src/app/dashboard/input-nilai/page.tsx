@@ -1,25 +1,45 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { prodiData, mahasiswaData, mataKuliahData, cpmkData, cpmkToCplMapping } from '@/data/mockData';
-import { saveNilai, getNilaiByMahasiswaMK } from '@/utils/nilaiStorage';
-import { getIntegratedMahasiswaList } from '@/utils/dataIntegration';
 import { useRouter } from 'next/navigation';
+
+const API_BASE = process.env.NEXT_PUBLIC_SIMCPL_API_BASE || 'http://localhost:8080/api';
+
+// Types from backend API
+type Prodi = { id_prodi: number; kode_prodi: string; nama_prodi: string };
+type MahasiswaSummary = { id_mhs: number; nim: string; nama: string; angkatan: number; semester_max: number; total_nilai: number };
+type MK = { id_mk: number; kode_mk: string; nama_mk: string; sks: number; semester: number; cpl_terkait: string[] };
+type CPMK = { id_cpmk: number; kode_cpmk: string; deskripsi: string; bobot_cpmk: number | null };
 
 export default function InputNilaiPage() {
   const router = useRouter();
-  const [selectedProdi, setSelectedProdi] = useState('ARS');
-  const [selectedSemester, setSelectedSemester] = useState(3);
-  const [selectedMahasiswa, setSelectedMahasiswa] = useState('');
-  const [filteredMahasiswa, setFilteredMahasiswa] = useState<any[]>([]);
-  const [mkList, setMkList] = useState<any[]>([]);
-  const [selectedMK, setSelectedMK] = useState<any>(null);
+
+  // API data states
+  const [prodiList, setProdiList] = useState<Prodi[]>([]);
+  const [mahasiswaList, setMahasiswaList] = useState<MahasiswaSummary[]>([]);
+  const [mkList, setMkList] = useState<MK[]>([]);
+  const [cpmkList, setCpmkList] = useState<CPMK[]>([]);
+
+  // Selection states
+  const [selectedProdi, setSelectedProdi] = useState<Prodi | null>(null);
+  const [selectedSemester, setSelectedSemester] = useState(1);
+  const [selectedMahasiswa, setSelectedMahasiswa] = useState<MahasiswaSummary | null>(null);
+  const [selectedMK, setSelectedMK] = useState<MK | null>(null);
+
+  // Loading states
+  const [loadingProdi, setLoadingProdi] = useState(true);
+  const [loadingMahasiswa, setLoadingMahasiswa] = useState(false);
+  const [loadingMK, setLoadingMK] = useState(false);
+  const [loadingCPMK, setLoadingCPMK] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // UI states
   const [nilaiMK, setNilaiMK] = useState('');
   const [showResult, setShowResult] = useState(false);
   const [calculatedCPMK, setCalculatedCPMK] = useState<any[]>([]);
   const [calculatedCPL, setCalculatedCPL] = useState<any[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // Key untuk force refresh
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Listen to nilai updates from import
   useEffect(() => {
@@ -28,51 +48,121 @@ export default function InputNilaiPage() {
       setRefreshKey(prev => prev + 1);
     };
 
-    const handleStorageChange = () => {
-      console.log('💾 Input Nilai: LocalStorage berubah');
-      setRefreshKey(prev => prev + 1);
-    };
-
     window.addEventListener('nilaiUpdated', handleNilaiUpdate);
-    window.addEventListener('storage', handleStorageChange);
-
     return () => {
       window.removeEventListener('nilaiUpdated', handleNilaiUpdate);
-      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
-  // Filter mahasiswa by prodi (integrated: mockData + localStorage)
+  // Fetch prodi list from backend
   useEffect(() => {
-    const integratedMahasiswa = getIntegratedMahasiswaList(selectedProdi);
-    setFilteredMahasiswa(integratedMahasiswa);
-    
-    if (integratedMahasiswa.length > 0) {
-      // Keep current selection if still valid, otherwise select first
-      const currentExists = integratedMahasiswa.find(m => m.id === selectedMahasiswa);
-      if (!currentExists || !selectedMahasiswa) {
-        setSelectedMahasiswa(integratedMahasiswa[0].id);
-      }
-    }
-  }, [selectedProdi, refreshKey]); // Add refreshKey to refresh mahasiswa list on import
+    const controller = new AbortController();
+    setLoadingProdi(true);
 
-  // Get MK list for selected prodi and semester
+    fetch(`${API_BASE}/prodi`, { signal: controller.signal })
+      .then(res => res.json())
+      .then((data: Prodi[]) => {
+        setProdiList(data);
+        if (data.length > 0 && !selectedProdi) {
+          setSelectedProdi(data[0]);
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching prodi:', err);
+        }
+      })
+      .finally(() => setLoadingProdi(false));
+
+    return () => controller.abort();
+  }, []);
+
+  // Fetch mahasiswa list when prodi changes
   useEffect(() => {
-    const mkFiltered = mataKuliahData.filter(
-      (mk) => mk.prodiKode === selectedProdi && mk.semester === selectedSemester
-    );
-    setMkList(mkFiltered);
+    if (!selectedProdi) {
+      setMahasiswaList([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadingMahasiswa(true);
+
+    fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/mahasiswa-nilai`, { signal: controller.signal })
+      .then(res => res.json())
+      .then((data: MahasiswaSummary[]) => {
+        setMahasiswaList(data);
+        if (data.length > 0) {
+          const currentExists = data.find(m => m.nim === selectedMahasiswa?.nim);
+          if (!currentExists) {
+            setSelectedMahasiswa(data[0]);
+          }
+        } else {
+          setSelectedMahasiswa(null);
+        }
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching mahasiswa:', err);
+          setMahasiswaList([]);
+        }
+      })
+      .finally(() => setLoadingMahasiswa(false));
+
+    return () => controller.abort();
+  }, [selectedProdi, refreshKey]);
+
+  // Fetch MK list when prodi or semester changes
+  useEffect(() => {
+    if (!selectedProdi) {
+      setMkList([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    setLoadingMK(true);
+
+    fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/mk?semester=${selectedSemester}`, { signal: controller.signal })
+      .then(res => res.json())
+      .then((data: MK[]) => {
+        setMkList(data);
+        setSelectedMK(null); // Reset MK selection
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching MK:', err);
+          setMkList([]);
+        }
+      })
+      .finally(() => setLoadingMK(false));
+
+    return () => controller.abort();
   }, [selectedProdi, selectedSemester]);
 
-  // Check if nilai already exists when MK is selected
+  // Fetch CPMK when MK is selected
   useEffect(() => {
-    if (selectedMK && selectedMahasiswa) {
-      const existingNilai = getNilaiByMahasiswaMK(selectedMahasiswa, selectedMK.kode);
-      if (existingNilai) {
-        setNilaiMK(existingNilai.nilaiAkhir.toString());
-      }
+    if (!selectedMK) {
+      setCpmkList([]);
+      return;
     }
-  }, [selectedMK, selectedMahasiswa]);
+
+    const controller = new AbortController();
+    setLoadingCPMK(true);
+
+    fetch(`${API_BASE}/mk/${selectedMK.id_mk}/cpmk`, { signal: controller.signal })
+      .then(res => res.json())
+      .then((data: CPMK[]) => {
+        setCpmkList(data);
+      })
+      .catch(err => {
+        if (err.name !== 'AbortError') {
+          console.error('Error fetching CPMK:', err);
+          setCpmkList([]);
+        }
+      })
+      .finally(() => setLoadingCPMK(false));
+
+    return () => controller.abort();
+  }, [selectedMK]);
 
   // Calculate CPMK from nilai MK
   const handleCalculate = () => {
@@ -84,89 +174,104 @@ export default function InputNilaiPage() {
       return;
     }
 
-    // Get CPMK for this MK
-    const cpmkList = cpmkData.filter((c) => c.mkKode === selectedMK.kode);
-
-    // Calculate nilai CPMK (breakdown otomatis berdasarkan bobot)
+    // Calculate nilai CPMK using cpmkList from API
     const cpmkResults = cpmkList.map((cpmk) => {
-      const nilaiCPMK = nilai * (cpmk.bobot / 100);
+      // Use bobot_cpmk from API, default to equal distribution if null
+      const bobot = cpmk.bobot_cpmk !== null
+        ? cpmk.bobot_cpmk * 100
+        : (cpmkList.length > 0 ? 100 / cpmkList.length : 0);
+      const nilaiCPMK = nilai * (bobot / 100);
       return {
-        kode: cpmk.kode,
+        kode: cpmk.kode_cpmk,
         deskripsi: cpmk.deskripsi,
-        bobot: cpmk.bobot,
+        bobot: Math.round(bobot * 10) / 10,
         nilai: Math.round(nilaiCPMK * 10) / 10,
       };
     });
 
     setCalculatedCPMK(cpmkResults);
 
-    // Calculate CPL contribution from this MK
-    const cplScoresMap: { [key: string]: { totalNilai: number; count: number } } = {};
-
-    cpmkResults.forEach((cpmk) => {
-      const mappings = cpmkToCplMapping.filter((m) => m.cpmkKode === cpmk.kode);
-
-      mappings.forEach((mapping) => {
-        if (!cplScoresMap[mapping.cplKode]) {
-          cplScoresMap[mapping.cplKode] = { totalNilai: 0, count: 0 };
-        }
-        cplScoresMap[mapping.cplKode].totalNilai += cpmk.nilai * (mapping.bobot / 100);
-        cplScoresMap[mapping.cplKode].count += 1;
-      });
-    });
-
-    const cplResults = Object.entries(cplScoresMap).map(([cplKode, data]) => ({
+    // Calculate CPL contribution from MK's cpl_terkait
+    const cplResults = (selectedMK.cpl_terkait || []).map(cplKode => ({
       kode: cplKode,
-      nilai: Math.round((data.totalNilai / data.count) * 10) / 10,
+      nilai: Math.round(nilai * 10) / 10, // Simplified: direct contribution
     }));
 
     setCalculatedCPL(cplResults);
     setShowResult(true);
   };
 
-  // Save nilai
-  const handleSave = () => {
-    if (!selectedMK || !selectedMahasiswa || !nilaiMK) return;
-    
+  // Save nilai via API
+  const handleSave = async () => {
+    if (!selectedMK || !selectedMahasiswa || !nilaiMK || !selectedProdi) return;
+
     const nilai = parseFloat(nilaiMK);
-    const success = saveNilai(selectedMahasiswa, selectedMK.kode, nilai);
-    
-    if (success) {
-      setSaveSuccess(true);
-      
-      // Dispatch custom event untuk notify komponen lain (Dashboard, Laporan, Manajemen)
-      window.dispatchEvent(new CustomEvent('nilaiUpdated', {
-        detail: {
-          mahasiswaId: selectedMahasiswa,
-          mkKode: selectedMK.kode,
-          nilaiAkhir: nilai,
-          source: 'input-nilai',
-          timestamp: new Date().toISOString()
-        }
-      }));
-      
-      console.log('✅ Nilai saved and event dispatched:', {
-        mahasiswa: selectedMahasiswa,
-        mk: selectedMK.kode,
-        nilai: nilai
+    setSaving(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/nilai-mk/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prodiKode: selectedProdi.kode_prodi,
+          semester: selectedSemester,
+          tahunAjaran: `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`,
+          matkulList: [{
+            kode: selectedMK.kode_mk,
+            nama: selectedMK.nama_mk,
+            sks: selectedMK.sks
+          }],
+          data: [{
+            nim: selectedMahasiswa.nim,
+            nama: selectedMahasiswa.nama,
+            nilaiMap: {
+              [selectedMK.kode_mk]: nilai
+            }
+          }]
+        })
       });
-      
-      // Show success message for 2 seconds
-      setTimeout(() => {
-        setSaveSuccess(false);
-        setSelectedMK(null);
-        setNilaiMK('');
-        setShowResult(false);
-        setCalculatedCPMK([]);
-        setCalculatedCPL([]);
-      }, 2000);
-    } else {
+
+      if (response.ok) {
+        setSaveSuccess(true);
+
+        // Dispatch custom event untuk notify komponen lain
+        window.dispatchEvent(new CustomEvent('nilaiUpdated', {
+          detail: {
+            mahasiswaNim: selectedMahasiswa.nim,
+            mkKode: selectedMK.kode_mk,
+            nilaiAkhir: nilai,
+            source: 'input-nilai',
+            timestamp: new Date().toISOString()
+          }
+        }));
+
+        console.log('✅ Nilai saved via API:', {
+          mahasiswa: selectedMahasiswa.nim,
+          mk: selectedMK.kode_mk,
+          nilai: nilai
+        });
+
+        // Show success message for 2 seconds
+        setTimeout(() => {
+          setSaveSuccess(false);
+          setSelectedMK(null);
+          setNilaiMK('');
+          setShowResult(false);
+          setCalculatedCPMK([]);
+          setCalculatedCPL([]);
+          setRefreshKey(prev => prev + 1); // Refresh data
+        }, 2000);
+      } else {
+        const errData = await response.json();
+        alert(`Gagal menyimpan nilai: ${errData.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Error saving nilai:', err);
       alert('Gagal menyimpan nilai. Silakan coba lagi.');
+    } finally {
+      setSaving(false);
     }
   };
-
-  const selectedMhs = filteredMahasiswa.find((m) => m.id === selectedMahasiswa);
-  const selectedProdiData = prodiData.find((p) => p.kode === selectedProdi);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-6">
@@ -184,7 +289,7 @@ export default function InputNilaiPage() {
           </div>
         </div>
       )}
-      
+
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-800 mb-2 flex items-center">
           <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mr-3 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -205,21 +310,25 @@ export default function InputNilaiPage() {
           </svg>
           Filter Data
         </h3>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Program Studi</label>
             <select
-              value={selectedProdi}
+              value={selectedProdi?.id_prodi || ''}
               onChange={(e) => {
-                setSelectedProdi(e.target.value);
-                setSelectedMahasiswa('');
+                const prodi = prodiList.find(p => p.id_prodi === Number(e.target.value));
+                setSelectedProdi(prodi || null);
+                setSelectedMahasiswa(null);
                 setSelectedMK(null);
               }}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              disabled={loadingProdi}
             >
-              {prodiData.map((prodi) => (
-                <option key={prodi.kode} value={prodi.kode}>{prodi.nama}</option>
+              {loadingProdi ? (
+                <option>Loading...</option>
+              ) : prodiList.map((prodi) => (
+                <option key={prodi.id_prodi} value={prodi.id_prodi}>{prodi.nama_prodi}</option>
               ))}
             </select>
           </div>
@@ -243,43 +352,46 @@ export default function InputNilaiPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Mahasiswa</label>
             <select
-              value={selectedMahasiswa}
+              value={selectedMahasiswa?.nim || ''}
               onChange={(e) => {
-                setSelectedMahasiswa(e.target.value);
+                const mhs = mahasiswaList.find(m => m.nim === e.target.value);
+                setSelectedMahasiswa(mhs || null);
                 setSelectedMK(null);
               }}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              disabled={filteredMahasiswa.length === 0}
+              disabled={loadingMahasiswa || mahasiswaList.length === 0}
             >
-              {filteredMahasiswa.length === 0 ? (
+              {loadingMahasiswa ? (
+                <option>Loading...</option>
+              ) : mahasiswaList.length === 0 ? (
                 <option>Tidak ada mahasiswa</option>
               ) : (
-                filteredMahasiswa.map((mhs) => (
-                  <option key={mhs.id} value={mhs.id}>{mhs.npm} - {mhs.nama}</option>
+                mahasiswaList.map((mhs) => (
+                  <option key={mhs.nim} value={mhs.nim}>{mhs.nim} - {mhs.nama}</option>
                 ))
               )}
             </select>
           </div>
         </div>
 
-        {selectedMhs && (
+        {selectedMahasiswa && (
           <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <span className="text-gray-600">Prodi:</span>
-                <p className="font-semibold text-gray-800">{selectedProdiData?.nama}</p>
+                <p className="font-semibold text-gray-800">{selectedProdi?.nama_prodi}</p>
               </div>
               <div>
                 <span className="text-gray-600">Nim:</span>
-                <p className="font-semibold text-gray-800">{selectedMhs.npm}</p>
+                <p className="font-semibold text-gray-800">{selectedMahasiswa.nim}</p>
               </div>
               <div>
                 <span className="text-gray-600">Nama:</span>
-                <p className="font-semibold text-gray-800">{selectedMhs.nama}</p>
+                <p className="font-semibold text-gray-800">{selectedMahasiswa.nama}</p>
               </div>
               <div>
-                <span className="text-gray-600">Semester Aktif:</span>
-                <p className="font-semibold text-gray-800">Semester {selectedMhs.semesterAktif}</p>
+                <span className="text-gray-600">Angkatan:</span>
+                <p className="font-semibold text-gray-800">{selectedMahasiswa.angkatan}</p>
               </div>
             </div>
           </div>
@@ -300,26 +412,24 @@ export default function InputNilaiPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {mkList.map((mk) => (
               <button
-                key={mk.kode}
+                key={mk.id_mk}
                 onClick={() => {
                   setSelectedMK(mk);
                   setNilaiMK('');
                   setShowResult(false);
                 }}
-                className={`p-4 rounded-lg border-2 transition-all text-left ${
-                  selectedMK?.kode === mk.kode
-                    ? 'border-blue-500 bg-blue-50 shadow-md'
-                    : 'border-gray-200 hover:border-blue-300'
-                }`}
+                className={`p-4 rounded-lg border-2 transition-all text-left ${selectedMK?.id_mk === mk.id_mk
+                  ? 'border-blue-500 bg-blue-50 shadow-md'
+                  : 'border-gray-200 hover:border-blue-300'
+                  }`}
               >
                 <div className="flex items-start justify-between mb-2">
-                  <h4 className="font-semibold text-gray-800">{mk.nama}</h4>
+                  <h4 className="font-semibold text-gray-800">{mk.nama_mk}</h4>
                   <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">{mk.sks} SKS</span>
                 </div>
-                <p className="text-sm text-gray-600 mb-2">Kode: {mk.kode}</p>
-                <p className="text-xs text-gray-500">Dosen: {mk.dosen}</p>
+                <p className="text-sm text-gray-600 mb-2">Kode: {mk.kode_mk}</p>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {mk.cplTerkait.map((cpl: string) => (
+                  {(mk.cpl_terkait || []).map((cpl: string) => (
                     <span key={cpl} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{cpl}</span>
                   ))}
                 </div>
@@ -333,7 +443,7 @@ export default function InputNilaiPage() {
       {selectedMK && (
         <div className="bg-white rounded-xl shadow-md p-6 border border-blue-100">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            Input Nilai: {selectedMK.nama}
+            Input Nilai: {selectedMK.nama_mk}
           </h3>
 
           <div className="max-w-md">
