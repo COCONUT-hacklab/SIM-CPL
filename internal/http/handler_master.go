@@ -114,7 +114,7 @@ func listCPMKByMKHandler(c *gin.Context) {
 	// cari CPMK berdasarkan kode_mk (kalau struktur cpmk ada kolom kode_mk)
 	var list []model.CPMK
 	if err := db.DB.WithContext(ctx).
-		Where("kode_mk = ?", mk.KodeMK).
+		Where("id_mk = ?", mk.IDMK).
 		Order("kode_cpmk").
 		Find(&list).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpmk"})
@@ -207,4 +207,144 @@ func recalcBobotHandler(c *gin.Context) {
 		"status":  "ok",
 		"message": "bobot CPL-MK dan MK-CPMK berhasil dihitung ulang",
 	})
+}
+
+// ========================= CPL MAPPING (CPL -> MK -> CPMK) =========================
+
+type MKMappingItem struct {
+	IDMK      uint64 `json:"id_mk"`
+	KodeMK    string `json:"kode_mk"`
+	NamaMK    string `json:"nama_mk"`
+	SKS       uint8  `json:"sks"`
+	Semester  uint8  `json:"semester"`
+	CPMKCount int    `json:"cpmk_count"`
+}
+
+type CPLMappingItem struct {
+	IDCPL     uint64          `json:"id_cpl"`
+	KodeCPL   string          `json:"kode_cpl"`
+	Deskripsi string          `json:"deskripsi"`
+	MKList    []MKMappingItem `json:"mk_list"`
+}
+
+// GET /api/prodi/:id_prodi/cpl-mapping?semester=1
+// Returns CPL list with linked MK (filtered by semester) and CPMK count per MK
+func getCPLMappingHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	idStr := c.Param("id_prodi")
+	idProdi, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
+		return
+	}
+
+	semStr := c.Query("semester")
+	var semFilter *uint8
+	if semStr != "" {
+		sem, err := strconv.ParseUint(semStr, 10, 8)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid semester"})
+			return
+		}
+		s := uint8(sem)
+		semFilter = &s
+	}
+
+	// 1. Get all CPL for this prodi
+	var cpls []model.CPL
+	if err := db.DB.WithContext(ctx).
+		Where("id_prodi = ?", idProdi).
+		Order("kode_cpl").
+		Find(&cpls).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpl"})
+		return
+	}
+
+	// 2. Get CPL-MK mappings
+	var cplMKs []model.CPLMK
+	if err := db.DB.WithContext(ctx).Find(&cplMKs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpl_mk"})
+		return
+	}
+
+	// Build map: id_cpl -> []id_mk
+	cplToMKs := make(map[uint64][]uint64)
+	for _, cm := range cplMKs {
+		cplToMKs[cm.IDCPL] = append(cplToMKs[cm.IDCPL], cm.IDMK)
+	}
+
+	// 3. Get all MK for this prodi (optionally filtered by semester)
+	var mks []model.MK
+	mkQuery := db.DB.WithContext(ctx).Where("id_prodi = ?", idProdi)
+	if semFilter != nil {
+		mkQuery = mkQuery.Where("semester = ?", *semFilter)
+	}
+	if err := mkQuery.Find(&mks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error mk"})
+		return
+	}
+
+	// Build map: id_mk -> MK
+	mkMap := make(map[uint64]model.MK)
+	mkIDs := make([]uint64, 0, len(mks))
+	for _, mk := range mks {
+		mkMap[mk.IDMK] = mk
+		mkIDs = append(mkIDs, mk.IDMK)
+	}
+
+	// 4. Count CPMK per MK
+	type cpmkCount struct {
+		IDMK  uint64 `gorm:"column:id_mk"`
+		Count int    `gorm:"column:cnt"`
+	}
+	var cpmkCounts []cpmkCount
+	if len(mkIDs) > 0 {
+		if err := db.DB.WithContext(ctx).
+			Model(&model.CPMK{}).
+			Select("id_mk, COUNT(*) as cnt").
+			Where("id_mk IN ?", mkIDs).
+			Group("id_mk").
+			Scan(&cpmkCounts).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpmk count"})
+			return
+		}
+	}
+	cpmkCountMap := make(map[uint64]int)
+	for _, cc := range cpmkCounts {
+		cpmkCountMap[cc.IDMK] = cc.Count
+	}
+
+	// 5. Build response
+	result := make([]CPLMappingItem, 0, len(cpls))
+	for _, cpl := range cpls {
+		item := CPLMappingItem{
+			IDCPL:     cpl.IDCPL,
+			KodeCPL:   cpl.KodeCPL,
+			Deskripsi: cpl.Deskripsi,
+			MKList:    []MKMappingItem{},
+		}
+
+		// Get MK IDs linked to this CPL
+		mkIDsForCPL := cplToMKs[cpl.IDCPL]
+		for _, mkID := range mkIDsForCPL {
+			mk, exists := mkMap[mkID]
+			if !exists {
+				// MK not in current semester filter
+				continue
+			}
+			item.MKList = append(item.MKList, MKMappingItem{
+				IDMK:      mk.IDMK,
+				KodeMK:    mk.KodeMK,
+				NamaMK:    mk.NamaMK,
+				SKS:       mk.SKS,
+				Semester:  mk.Semester,
+				CPMKCount: cpmkCountMap[mk.IDMK],
+			})
+		}
+
+		result = append(result, item)
+	}
+
+	c.JSON(http.StatusOK, result)
 }

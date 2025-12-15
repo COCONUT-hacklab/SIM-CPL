@@ -33,6 +33,9 @@ func NewRouter() *gin.Engine {
 		// STATISTIK CPL PER PRODI + SEMESTER
 		api.GET("/prodi/:id_prodi/cpl-stats", getCPLStatsByProdiSemesterHandler)
 
+		// CPL MAPPING (CPL -> MK -> CPMK)
+		api.GET("/prodi/:id_prodi/cpl-mapping", getCPLMappingHandler)
+
 		// IMPORT NILAI MK
 		// (kalau handler kamu namanya importNilaiJSONHandler, ganti di sini)
 		api.POST("/nilai-mk/import", importNilaiHandler)
@@ -41,6 +44,9 @@ func NewRouter() *gin.Engine {
 		api.POST("/prodi/:id_prodi/recalc-bobot", recalcBobotHandler)
 
 		api.GET("/prodi/:id_prodi/mahasiswa-nilai", listMahasiswaDenganNilaiHandler)
+
+		// NILAI CPL PER MAHASISWA
+		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
 
 		// (Endpoint lain seperti /prodi/:id_prodi/mahasiswa-nilai atau
 		//  /mahasiswa/:nim/cpl bisa kamu daftarkan di sini juga,

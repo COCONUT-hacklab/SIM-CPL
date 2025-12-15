@@ -127,9 +127,9 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 		sem = uint8(tmp)
 	}
 
-	// ambil mahasiswa
+	// ambil mahasiswa by NIM (using Find to avoid GORM's First() pk-matching)
 	var mhs model.Mahasiswa
-	if err := db.DB.WithContext(ctx).Where("nim = ?", nim).First(&mhs).Error; err != nil {
+	if err := db.DB.WithContext(ctx).Where("nim = ?", nim).Take(&mhs).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "mahasiswa tidak ditemukan"})
 		} else {
