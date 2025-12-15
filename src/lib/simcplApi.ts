@@ -1,13 +1,12 @@
-// src/lib/simcplApi.ts
+// ============================ SIMCPL API CLIENT ============================
+// File: src/lib/simcplApi.ts
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_SIMCPL_API_BASE ?? 'http://localhost:8001/api';
+// ============================ TYPES ============================
 
 export type Prodi = {
   id_prodi: number;
   kode_prodi: string;
   nama_prodi: string;
-  jenjang: string;
 };
 
 export type MK = {
@@ -20,115 +19,181 @@ export type MK = {
 };
 
 export type MahasiswaSummary = {
-  id_mhs: number;
+  id_mhs: string;       // (string/uuid atau numeric string)
   nim: string;
   nama: string;
-  angkatan: number;
-  semester_max: number;
-  total_nilai: number;
-  dari_import: number;
+  angkatan?: number | null;
+  status?: string | null;
+  // Extended fields from backend
+  semester_max?: number;
+  total_nilai?: number;
+  dari_import?: number;
 };
 
 export type ImportMatkulItem = {
-  kode: string;
-  nama: string;
-  sks: number;
+  kode: string;      // kode MK
+  nama: string;      // nama MK
+  sks: number;       // SKS
 };
 
 export type ImportMahasiswaItem = {
   nim: string;
   nama: string;
+  // key dinamis: kode_mk -> nilai (number)
   nilaiMap: Record<string, number>;
 };
 
 export type ImportNilaiRequest = {
-  prodiKode: string;
-  semester: number;
-  tahunAjaran: string;
-  matkulList: ImportMatkulItem[];
-  importData: ImportMahasiswaItem[];
+  prodiKode: string;                 // contoh: "INF"
+  semester: number;                  // 1..8
+  tahunAjaran: string;               // contoh: "2024/2025"
+  matkulList: ImportMatkulItem[];    // daftar kode MK yang dipakai di file
+  importData: ImportMahasiswaItem[]; // row mahasiswa + nilai per MK
 };
 
-export type ImportNilaiResponse = {
-  status?: string;
-  summary?: any;
-  [key: string]: any;
-};
+// ============================ INTERNAL HELPERS ============================
 
-async function handleJson<T>(res: Response): Promise<T> {
+function normalizeBaseUrl(raw: unknown): string {
+  // pastikan string (bukan function / object)
+  const s = typeof raw === 'string' ? raw : '';
+
+  // default backend local
+  const fallback = 'http://localhost:8001/api';
+
+  const base = (s || fallback).trim();
+
+  // hilangkan trailing slash
+  return base.endsWith('/') ? base.slice(0, -1) : base;
+}
+
+// PENTING: ini HARUS string. Jangan pakai wrapper function.
+export const API_BASE: string = normalizeBaseUrl(
+  process.env.NEXT_PUBLIC_SIMCPL_API_BASE,
+);
+
+// join "API_BASE" dan path endpoint secara aman
+function apiUrl(path: string): string {
+  if (!path.startsWith('/')) path = `/${path}`;
+  return `${API_BASE}${path}`;
+}
+
+async function fetchJson<T>(input: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+
   if (!res.ok) {
-    let text = '';
-    try {
-      text = await res.text();
-    } catch {
-      /* ignore */
-    }
-    throw new Error(text || `Request failed with status ${res.status}`);
+    const body = await res.text().catch(() => '');
+    throw new Error(
+      `API error ${res.status} ${res.statusText} @ ${input}\n${body}`,
+    );
   }
   return (await res.json()) as T;
 }
 
+// ============================ ENDPOINTS: MASTER ============================
+
+// GET /api/prodi
 export async function fetchProdiList(signal?: AbortSignal): Promise<Prodi[]> {
-  const res = await fetch(`${API_BASE}/prodi`, { signal });
-  return handleJson<Prodi[]>(res);
+  return fetchJson<Prodi[]>(apiUrl('/prodi'), { method: 'GET', signal });
 }
 
+// GET /api/prodi/:id_prodi/mk?semester=1
 export async function fetchMKByProdiSemester(
   idProdi: number,
-  semester: number,
-  signal?: AbortSignal
+  semester?: number,
+  signal?: AbortSignal,
 ): Promise<MK[]> {
-  const res = await fetch(
-    `${API_BASE}/prodi/${idProdi}/mk?semester=${semester}`,
-    { signal }
+  const q = semester ? `?semester=${encodeURIComponent(String(semester))}` : '';
+  return fetchJson<MK[]>(
+    apiUrl(`/prodi/${encodeURIComponent(String(idProdi))}/mk${q}`),
+    { method: 'GET', signal },
   );
-  return handleJson<MK[]>(res);
 }
 
+// GET /api/prodi/:id_prodi/mahasiswa-nilai
+// List mahasiswa yang sudah punya nilai (tanpa filter semester untuk mendapat semua semester)
 export async function fetchMahasiswaSummary(
   idProdi: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<MahasiswaSummary[]> {
-  const res = await fetch(`${API_BASE}/prodi/${idProdi}/mahasiswa-nilai`, {
-    signal,
-  });
-
-  // kalau backend entah kenapa balikin null/{} kita paksa jadi []
-  try {
-    const data = await handleJson<any>(res);
-    return Array.isArray(data) ? (data as MahasiswaSummary[]) : [];
-  } catch {
-    return [];
-  }
+  return fetchJson<MahasiswaSummary[]>(
+    apiUrl(`/prodi/${encodeURIComponent(String(idProdi))}/mahasiswa-nilai`),
+    { method: 'GET', signal },
+  );
 }
 
+// ============================ ENDPOINTS: IMPORT NILAI ============================
+
+// POST /api/nilai-mk/import
 export async function importNilai(
-  body: ImportNilaiRequest,
-  signal?: AbortSignal
-): Promise<ImportNilaiResponse> {
-  const res = await fetch(`${API_BASE}/nilai-mk/import`, {
+  payload: ImportNilaiRequest,
+  signal?: AbortSignal,
+): Promise<any> {
+  return fetchJson<any>(apiUrl('/nilai-mk/import'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
     signal,
   });
-  return handleJson<ImportNilaiResponse>(res);
 }
 
+// ============================ ENDPOINTS: ADMIN (BOBOT) ============================
 
-
-export async function recalcBobotProdi(idProdi: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/prodi/${idProdi}/recalc-bobot`, {
+// POST /api/prodi/:id_prodi/recalc-bobot
+export async function recalcBobotProdi(
+  idProdi: number,
+  signal?: AbortSignal,
+): Promise<{ status: string; message?: string }> {
+  return fetchJson(apiUrl(`/prodi/${encodeURIComponent(String(idProdi))}/recalc-bobot`), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
+    signal,
   });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(
-      `Gagal menghitung ulang bobot (status ${res.status}): ${text || res.statusText}`,
-    );
-  }
 }
+
+// ============================ TYPES: CPL ============================
+
+export type CPL = {
+  id_cpl: number;
+  kode_cpl: string;
+  deskripsi: string;
+};
+
+export type NilaiCPLItem = {
+  kode_cpl: string;
+  nilai_angka: number;
+};
+
+export type NilaiCPLByMahasiswaResponse = {
+  nim: string;
+  nama: string;
+  semester: number;
+  cpl: NilaiCPLItem[];
+};
+
+// ============================ ENDPOINTS: CPL ============================
+
+// GET /api/prodi/:id_prodi/cpl
+export async function fetchCPLByProdi(
+  idProdi: number,
+  signal?: AbortSignal,
+): Promise<CPL[]> {
+  return fetchJson<CPL[]>(
+    apiUrl(`/prodi/${encodeURIComponent(String(idProdi))}/cpl`),
+    { method: 'GET', signal },
+  );
+}
+
+// GET /api/mahasiswa/:nim/cpl?semester=X
+// This endpoint returns the CPL scores for a specific student and semester
+export async function fetchNilaiCPLByMahasiswa(
+  nim: string,
+  semester: number,
+  signal?: AbortSignal,
+): Promise<NilaiCPLByMahasiswaResponse> {
+  const q = `?semester=${encodeURIComponent(String(semester))}`;
+  return fetchJson<NilaiCPLByMahasiswaResponse>(
+    apiUrl(`/mahasiswa/${encodeURIComponent(nim)}/cpl${q}`),
+    { method: 'GET', signal },
+  );
+}
+

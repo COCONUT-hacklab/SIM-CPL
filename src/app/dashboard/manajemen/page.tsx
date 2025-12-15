@@ -14,6 +14,7 @@ import {
   fetchMahasiswaSummary,
   importNilai,
 } from '@/lib/simcplApi';
+import { api } from '@/lib/api';
 
 type MahasiswaRow = {
   id: string;
@@ -40,6 +41,9 @@ type CPLStat = {
   rata_nilai: number;
   min_nilai: number;
   max_nilai: number;
+  kategori_tinggi: number;
+  kategori_sedang: number;
+  kategori_rendah: number;
 };
 
 type CPMK = {
@@ -54,7 +58,7 @@ type CPMK = {
 // ===================== API CONFIG =====================
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_SIMCPL_API_BASE ?? 'http://localhost:8001/api';
+  api ?? 'http://localhost:8001/api';
 
 const DEFAULT_TAHUN_AJARAN = '2024/2025';
 
@@ -82,7 +86,7 @@ export default function ManajemenDataPage() {
   const [mahasiswaSummary, setMahasiswaSummary] = useState<MahasiswaSummary[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
-    // ==== CPL & CPMK ====
+  // ==== CPL & CPMK ====
   const [cplStats, setCplStats] = useState<CPLStat[]>([]);
   const [isLoadingCPL, setIsLoadingCPL] = useState(false);
   const [cplError, setCplError] = useState<string | null>(null);
@@ -159,7 +163,7 @@ export default function ManajemenDataPage() {
     return () => controller.abort();
   }, [selectedProdi, refreshKey]);
 
-    // ====================== FETCH CPL STATS UNTUK TAB CPL ======================
+  // ====================== FETCH CPL STATS UNTUK TAB CPL ======================
 
   useEffect(() => {
     if (activeTab !== 'cpl') return;
@@ -502,6 +506,7 @@ export default function ManajemenDataPage() {
         minNilai: min,
         maxNilai: max,
         nilaiDariImport: count,
+        dosen: '-', // Placeholder - backend doesn't provide dosen info yet
       };
     });
   }, [mkList, localNilai]);
@@ -522,41 +527,37 @@ export default function ManajemenDataPage() {
         <div className="flex border-b border-gray-200">
           <button
             onClick={() => setActiveTab('import')}
-            className={`px-6 py-4 font-medium transition-colors ${
-              activeTab === 'import'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
+            className={`px-6 py-4 font-medium transition-colors ${activeTab === 'import'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800'
+              }`}
           >
             Import Nilai
           </button>
           <button
             onClick={() => setActiveTab('mahasiswa')}
-            className={`px-6 py-4 font-medium transition-colors ${
-              activeTab === 'mahasiswa'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
+            className={`px-6 py-4 font-medium transition-colors ${activeTab === 'mahasiswa'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800'
+              }`}
           >
             Mahasiswa
           </button>
           <button
             onClick={() => setActiveTab('matakuliah')}
-            className={`px-6 py-4 font-medium transition-colors ${
-              activeTab === 'matakuliah'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
+            className={`px-6 py-4 font-medium transition-colors ${activeTab === 'matakuliah'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800'
+              }`}
           >
             Mata Kuliah
           </button>
           <button
             onClick={() => setActiveTab('cpl')}
-            className={`px-6 py-4 font-medium transition-colors ${
-              activeTab === 'cpl'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
+            className={`px-6 py-4 font-medium transition-colors ${activeTab === 'cpl'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-600 hover:text-gray-800'
+              }`}
           >
             CPL & CPMK
           </button>
@@ -710,13 +711,12 @@ export default function ManajemenDataPage() {
               {/* Status Message */}
               {importMessage && (
                 <div
-                  className={`p-4 rounded-lg ${
-                    importStatus === 'error'
-                      ? 'bg-red-50 border border-red-200 text-red-800'
-                      : importStatus === 'success'
+                  className={`p-4 rounded-lg ${importStatus === 'error'
+                    ? 'bg-red-50 border border-red-200 text-red-800'
+                    : importStatus === 'success'
                       ? 'bg-green-50 border border-green-200 text-green-800'
                       : 'bg-blue-50 border border-blue-200 text-blue-800'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center">
                     {importStatus === 'error' && (
@@ -780,8 +780,8 @@ export default function ManajemenDataPage() {
                       {importStatus === 'processing'
                         ? 'Mengimpor...'
                         : importStatus === 'success'
-                        ? 'Import Selesai'
-                        : 'Import ke Sistem'}
+                          ? 'Import Selesai'
+                          : 'Import ke Sistem'}
                     </button>
                   </div>
                   <div className="overflow-x-auto max-h-96 overflow-y-auto">
@@ -821,13 +821,12 @@ export default function ManajemenDataPage() {
                                 <td key={key} className="px-4 py-3 text-sm text-center">
                                   {row[key] && !isNaN(parseFloat(row[key])) ? (
                                     <span
-                                      className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                                        parseFloat(row[key]) >= 75
-                                          ? 'bg-green-100 text-green-800'
-                                          : parseFloat(row[key]) >= 60
+                                      className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${parseFloat(row[key]) >= 75
+                                        ? 'bg-green-100 text-green-800'
+                                        : parseFloat(row[key]) >= 60
                                           ? 'bg-yellow-100 text-yellow-800'
                                           : 'bg-red-100 text-red-800'
-                                      }`}
+                                        }`}
                                     >
                                       {row[key]}
                                     </span>
@@ -891,169 +890,168 @@ export default function ManajemenDataPage() {
             </div>
           )}
 
-         {/* ================= TAB MAHASISWA ================= */}
-{activeTab === 'mahasiswa' && (
-  <div>
-    <div className="flex justify-between items-center mb-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-800">
-          Data Mahasiswa yang Sudah Dinilai
-        </h3>
-        <p className="text-sm text-gray-600 mt-1">
-          Menampilkan mahasiswa yang memiliki nilai pada Prodi{' '}
-          <span className="font-medium">
-            {selectedProdi ? selectedProdi.nama_prodi : '-'}
-          </span>
-          . Data ini langsung dibaca dari database (bukan mock / state lokal).
-        </p>
-      </div>
-      <div className="flex items-center space-x-3">
-        <select
-          value={selectedProdiKode}
-          onChange={(e) => setSelectedProdiKode(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-        >
-          {prodiList.map((prodi) => (
-            <option key={prodi.id_prodi} value={prodi.kode_prodi}>
-              {prodi.nama_prodi}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => setRefreshKey((prev) => prev + 1)}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center text-sm"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4 mr-2"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-            />
-          </svg>
-          Refresh
-        </button>
-      </div>
-    </div>
-
-    {mahasiswaSummary && mahasiswaSummary.length > 0 ? (
-      <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                No
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                NIM
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Nama
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Prodi
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Angkatan
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Semester
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Total Nilai
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                Dari Import
-              </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                Status
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {mahasiswaSummary.map((mhs, idx) => (
-              <tr key={mhs.id_mhs} className="hover:bg-gray-50">
-                <td className="px-4 py-3 text-sm text-gray-600">{idx + 1}</td>
-                <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                  {mhs.nim}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-800">{mhs.nama}</td>
-                <td className="px-4 py-3 text-sm text-gray-600">
-                  {selectedProdi?.nama_prodi ?? '-'}
-                </td>
-                <td className="px-4 py-3 text-sm text-center text-gray-600">
-                  {mhs.angkatan}
-                </td>
-                <td className="px-4 py-3 text-sm text-center">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    Sem {mhs.semester_max}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">
-                  {mhs.total_nilai}
-                </td>
-                <td className="px-4 py-3 text-sm text-center">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    {mhs.dari_import}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  <span
-                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      mhs.dari_import > 0
-                        ? 'bg-purple-100 text-purple-800'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
+          {/* ================= TAB MAHASISWA ================= */}
+          {activeTab === 'mahasiswa' && (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800">
+                    Data Mahasiswa yang Sudah Dinilai
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Menampilkan mahasiswa yang memiliki nilai pada Prodi{' '}
+                    <span className="font-medium">
+                      {selectedProdi ? selectedProdi.nama_prodi : '-'}
+                    </span>
+                    . Data ini langsung dibaca dari database (bukan mock / state lokal).
+                  </p>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <select
+                    value={selectedProdiKode}
+                    onChange={(e) => setSelectedProdiKode(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm"
                   >
-                    {mhs.dari_import > 0 ? 'Ada data import' : 'Nilai lama / manual'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    ) : (
-      <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-8 w-8 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-            />
-          </svg>
-        </div>
-        <h3 className="text-lg font-semibold text-gray-800 mb-2">
-          Belum Ada Data Mahasiswa
-        </h3>
-        <p className="text-gray-600 mb-4">
-          Belum ada mahasiswa yang memiliki nilai untuk prodi ini, atau data belum
-          terimport. Coba lakukan import atau klik Refresh setelah import.
-        </p>
-        <button
-          onClick={() => setActiveTab('import')}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Pergi ke Import Nilai
-        </button>
-      </div>
-    )}
-  </div>
-)}
+                    {prodiList.map((prodi) => (
+                      <option key={prodi.id_prodi} value={prodi.kode_prodi}>
+                        {prodi.nama_prodi}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => setRefreshKey((prev) => prev + 1)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center text-sm"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+              </div>
+
+              {mahasiswaSummary && mahasiswaSummary.length > 0 ? (
+                <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          No
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          NIM
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Nama
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Prodi
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          Angkatan
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          Semester
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          Total Nilai
+                        </th>
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                          Dari Import
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                          Status
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {mahasiswaSummary.map((mhs, idx) => (
+                        <tr key={mhs.id_mhs} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-sm text-gray-600">{idx + 1}</td>
+                          <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                            {mhs.nim}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-800">{mhs.nama}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {selectedProdi?.nama_prodi ?? '-'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-600">
+                            {mhs.angkatan}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              Sem {mhs.semester_max}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center font-semibold text-gray-900">
+                            {mhs.total_nilai}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-center">
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              {mhs.dari_import ?? 0}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm">
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${(mhs.dari_import ?? 0) > 0
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-gray-100 text-gray-600'
+                                }`}
+                            >
+                              {(mhs.dari_import ?? 0) > 0 ? 'Ada data import' : 'Nilai lama / manual'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                  <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mb-4">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-8 w-8 text-gray-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
+                      />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                    Belum Ada Data Mahasiswa
+                  </h3>
+                  <p className="text-gray-600 mb-4">
+                    Belum ada mahasiswa yang memiliki nilai untuk prodi ini, atau data belum
+                    terimport. Coba lakukan import atau klik Refresh setelah import.
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('import')}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Pergi ke Import Nilai
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
 
           {/* ================= TAB MATA KULIAH ================= */}
@@ -1157,13 +1155,12 @@ export default function ManajemenDataPage() {
                         <div className="flex justify-between items-center">
                           <span className="text-xs text-gray-600">Rata-rata:</span>
                           <span
-                            className={`text-lg font-bold ${
-                              mk.avgNilai >= 75
-                                ? 'text-green-600'
-                                : mk.avgNilai >= 60
+                            className={`text-lg font-bold ${mk.avgNilai >= 75
+                              ? 'text-green-600'
+                              : mk.avgNilai >= 60
                                 ? 'text-yellow-600'
                                 : 'text-red-600'
-                            }`}
+                              }`}
                           >
                             {mk.avgNilai > 0 ? mk.avgNilai : '-'}
                           </span>
@@ -1186,13 +1183,12 @@ export default function ManajemenDataPage() {
                         <div className="mt-3 pt-3 border-t border-gray-100">
                           <div className="w-full bg-gray-200 rounded-full h-2">
                             <div
-                              className={`h-2 rounded-full ${
-                                mk.avgNilai >= 75
-                                  ? 'bg-green-500'
-                                  : mk.avgNilai >= 60
+                              className={`h-2 rounded-full ${mk.avgNilai >= 75
+                                ? 'bg-green-500'
+                                : mk.avgNilai >= 60
                                   ? 'bg-yellow-500'
                                   : 'bg-red-500'
-                              }`}
+                                }`}
                               style={{ width: `${(mk.avgNilai / 100) * 100}%` }}
                             ></div>
                           </div>
@@ -1237,142 +1233,142 @@ export default function ManajemenDataPage() {
           )}
 
           {activeTab === 'cpl' && (
-  <div className="space-y-8">
-    
-    {/* ================= KPI SUMMARY ================= */}
-    <div className="grid grid-cols-3 gap-4">
-      {/* Tercapai */}
-      <div className="p-4 rounded-xl bg-green-50 border border-green-200">
-        <p className="text-sm text-green-700 font-semibold">Tercapai (70–100)</p>
-        <p className="text-3xl font-bold text-green-800 mt-1">
-          {cplStats.filter(c => c.rata_nilai >= 70).length}
-        </p>
-      </div>
+            <div className="space-y-8">
 
-      {/* Cukup */}
-      <div className="p-4 rounded-xl bg-yellow-50 border border-yellow-200">
-        <p className="text-sm text-yellow-700 font-semibold">Cukup (50–69)</p>
-        <p className="text-3xl font-bold text-yellow-700 mt-1">
-          {cplStats.filter(c => c.rata_nilai >= 50 && c.rata_nilai < 70).length}
-        </p>
-      </div>
-
-      {/* Belum Tercapai */}
-      <div className="p-4 rounded-xl bg-red-50 border border-red-200">
-        <p className="text-sm text-red-700 font-semibold">Belum Tercapai (&lt; 50)</p>
-        <p className="text-3xl font-bold text-red-700 mt-1">
-          {cplStats.filter(c => c.rata_nilai < 50).length}
-        </p>
-      </div>
-    </div>
-
-    {/* ================= TABLE CPL ================= */}
-    <div className="bg-white border rounded-xl p-4">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-left font-medium">Kode CPL</th>
-            <th className="px-3 py-2 text-left font-medium">Deskripsi</th>
-            <th className="px-3 py-2 text-center font-medium">Mahasiswa</th>
-            <th className="px-3 py-2 text-center font-medium">Rata-rata</th>
-            <th className="px-3 py-2 text-center font-medium">Min – Max</th>
-            <th className="px-3 py-2 text-center font-medium">Distribusi</th>
-          </tr>
-        </thead>
-
-        <tbody className="divide-y">
-          {cplStats.map((cpl) => (
-            <tr key={cpl.id_cpl} className="hover:bg-gray-50">
-              
-              <td className="px-3 py-3 font-semibold">{cpl.kode_cpl}</td>
-
-              <td className="px-3 py-3">{cpl.deskripsi}</td>
-
-              <td className="px-3 py-3 text-center">
-                <span className="px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">
-                  {cpl.jumlah_mahasiswa} mhs
-                </span>
-              </td>
-
-              {/* RATANILAI */}
-              <td className="px-3 py-3 text-center font-bold"
-                style={{
-                  color:
-                    cpl.rata_nilai >= 70
-                      ? "#15803d"         // hijau
-                      : cpl.rata_nilai >= 50
-                      ? "#ca8a04"         // kuning
-                      : "#dc2626"         // merah
-                }}
-              >
-                {cpl.rata_nilai.toFixed(1)}
-              </td>
-
-              {/* MIN - MAX */}
-              <td className="px-3 py-3 text-center text-gray-700">
-                {cpl.min_nilai.toFixed(1)} – {cpl.max_nilai.toFixed(1)}
-              </td>
-
-              {/* DISTRIBUSI */}
-              <td className="px-3 py-3 text-center space-x-2">
-                <span className="px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-semibold">
-                  +{cpl.kategori_tinggi}
-                </span>
-                <span className="px-2 py-1 rounded-md bg-yellow-50 text-yellow-700 text-xs font-semibold">
-                  ~{cpl.kategori_sedang}
-                </span>
-                <span className="px-2 py-1 rounded-md bg-red-50 text-red-700 text-xs font-semibold">
-                  ×{cpl.kategori_rendah}
-                </span>
-              </td>
-
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-
-    {/* ================= CPMK LIST ================= */}
-    <div className="bg-white border rounded-xl p-4">
-      <h4 className="text-sm font-semibold mb-3">
-        Struktur CPMK per Mata Kuliah (Semester {selectedSemester})
-      </h4>
-
-      {mkList.map((mk) => (
-        <div key={mk.id_mk} className="border-b last:border-0 py-3">
-          <div className="flex justify-between items-center">
-            <div>
-              <div className="font-semibold">{mk.kode_mk}</div>
-              <div className="text-gray-600 text-sm">{mk.nama_mk}</div>
-            </div>
-
-            <button
-              className="text-sm px-3 py-1 rounded-md border hover:bg-gray-50"
-              onClick={() => toggleMKExpansion(mk)}
-            >
-              {expandedMKIds.includes(mk.id_mk) ? "Tutup CPMK" : "Lihat CPMK"}
-            </button>
-          </div>
-
-          {expandedMKIds.includes(mk.id_mk) && (
-            <div className="mt-3 ml-3 pl-3 border-l">
-              {(cpmkByMK[mk.id_mk] || []).map((cp) => (
-                <div key={cp.id_cpmk} className="py-2">
-                  <div className="font-semibold">{cp.kode_cpmk}</div>
-                  <div className="text-gray-700 text-sm">{cp.deskripsi}</div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    Bobot: {cp.bobot_cpmk ?? "-"}
-                  </div>
+              {/* ================= KPI SUMMARY ================= */}
+              <div className="grid grid-cols-3 gap-4">
+                {/* Tercapai */}
+                <div className="p-4 rounded-xl bg-green-50 border border-green-200">
+                  <p className="text-sm text-green-700 font-semibold">Tercapai (70–100)</p>
+                  <p className="text-3xl font-bold text-green-800 mt-1">
+                    {cplStats.filter(c => c.rata_nilai >= 70).length}
+                  </p>
                 </div>
-              ))}
+
+                {/* Cukup */}
+                <div className="p-4 rounded-xl bg-yellow-50 border border-yellow-200">
+                  <p className="text-sm text-yellow-700 font-semibold">Cukup (50–69)</p>
+                  <p className="text-3xl font-bold text-yellow-700 mt-1">
+                    {cplStats.filter(c => c.rata_nilai >= 50 && c.rata_nilai < 70).length}
+                  </p>
+                </div>
+
+                {/* Belum Tercapai */}
+                <div className="p-4 rounded-xl bg-red-50 border border-red-200">
+                  <p className="text-sm text-red-700 font-semibold">Belum Tercapai (&lt; 50)</p>
+                  <p className="text-3xl font-bold text-red-700 mt-1">
+                    {cplStats.filter(c => c.rata_nilai < 50).length}
+                  </p>
+                </div>
+              </div>
+
+              {/* ================= TABLE CPL ================= */}
+              <div className="bg-white border rounded-xl p-4">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Kode CPL</th>
+                      <th className="px-3 py-2 text-left font-medium">Deskripsi</th>
+                      <th className="px-3 py-2 text-center font-medium">Mahasiswa</th>
+                      <th className="px-3 py-2 text-center font-medium">Rata-rata</th>
+                      <th className="px-3 py-2 text-center font-medium">Min – Max</th>
+                      <th className="px-3 py-2 text-center font-medium">Distribusi</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y">
+                    {cplStats.map((cpl) => (
+                      <tr key={cpl.id_cpl} className="hover:bg-gray-50">
+
+                        <td className="px-3 py-3 font-semibold">{cpl.kode_cpl}</td>
+
+                        <td className="px-3 py-3">{cpl.deskripsi}</td>
+
+                        <td className="px-3 py-3 text-center">
+                          <span className="px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">
+                            {cpl.jumlah_mahasiswa} mhs
+                          </span>
+                        </td>
+
+                        {/* RATANILAI */}
+                        <td className="px-3 py-3 text-center font-bold"
+                          style={{
+                            color:
+                              cpl.rata_nilai >= 70
+                                ? "#15803d"         // hijau
+                                : cpl.rata_nilai >= 50
+                                  ? "#ca8a04"         // kuning
+                                  : "#dc2626"         // merah
+                          }}
+                        >
+                          {cpl.rata_nilai.toFixed(1)}
+                        </td>
+
+                        {/* MIN - MAX */}
+                        <td className="px-3 py-3 text-center text-gray-700">
+                          {cpl.min_nilai.toFixed(1)} – {cpl.max_nilai.toFixed(1)}
+                        </td>
+
+                        {/* DISTRIBUSI */}
+                        <td className="px-3 py-3 text-center space-x-2">
+                          <span className="px-2 py-1 rounded-md bg-green-50 text-green-700 text-xs font-semibold">
+                            +{cpl.kategori_tinggi}
+                          </span>
+                          <span className="px-2 py-1 rounded-md bg-yellow-50 text-yellow-700 text-xs font-semibold">
+                            ~{cpl.kategori_sedang}
+                          </span>
+                          <span className="px-2 py-1 rounded-md bg-red-50 text-red-700 text-xs font-semibold">
+                            ×{cpl.kategori_rendah}
+                          </span>
+                        </td>
+
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ================= CPMK LIST ================= */}
+              <div className="bg-white border rounded-xl p-4">
+                <h4 className="text-sm font-semibold mb-3">
+                  Struktur CPMK per Mata Kuliah (Semester {selectedSemester})
+                </h4>
+
+                {mkList.map((mk) => (
+                  <div key={mk.id_mk} className="border-b last:border-0 py-3">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <div className="font-semibold">{mk.kode_mk}</div>
+                        <div className="text-gray-600 text-sm">{mk.nama_mk}</div>
+                      </div>
+
+                      <button
+                        className="text-sm px-3 py-1 rounded-md border hover:bg-gray-50"
+                        onClick={() => toggleMKExpansion(mk)}
+                      >
+                        {expandedMKIds.includes(mk.id_mk) ? "Tutup CPMK" : "Lihat CPMK"}
+                      </button>
+                    </div>
+
+                    {expandedMKIds.includes(mk.id_mk) && (
+                      <div className="mt-3 ml-3 pl-3 border-l">
+                        {(cpmkByMK[mk.id_mk] || []).map((cp) => (
+                          <div key={cp.id_cpmk} className="py-2">
+                            <div className="font-semibold">{cp.kode_cpmk}</div>
+                            <div className="text-gray-700 text-sm">{cp.deskripsi}</div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Bobot: {cp.bobot_cpmk ?? "-"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
             </div>
           )}
-        </div>
-      ))}
-    </div>
-
-  </div>
-)}
 
 
         </div>

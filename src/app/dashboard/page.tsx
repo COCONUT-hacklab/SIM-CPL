@@ -3,11 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  cplData,
-  mataKuliahData,
-  cpmkData,
-  cpmkToCplMapping,
-} from '@/data/mockData';
+  fetchNilaiCPLByMahasiswa,
+  fetchCPLByProdi,
+  type CPL,
+} from '@/lib/simcplApi';
 import {
   BarChart,
   Bar,
@@ -55,6 +54,14 @@ type CplScore = {
   isRealData: boolean;
 };
 
+type CPMKItem = {
+  id_cpmk: number;
+  id_mk: number;
+  kode_cpmk: string;
+  deskripsi: string;
+  bobot_cpmk: number | null;
+};
+
 type MappingNode = {
   cpl: {
     kode: string;
@@ -62,6 +69,7 @@ type MappingNode = {
   };
   mkCount: number;
   mataKuliah: {
+    id_mk: number;
     kode: string;
     nama: string;
     sks: number;
@@ -82,13 +90,53 @@ type RadarPoint = {
   fullMark: number;
 };
 
-// ============================ HELPER: BUILD MAPPING (CPL–MK–CPMK) DARI MOCK ============================
+type CPLStatItem = {
+  id_cpl: number;
+  kode_cpl: string;
+  deskripsi: string;
+  jumlah_mk: number;
+  jumlah_mahasiswa: number;
+  rata_nilai: number;
+  min_nilai: number;
+  max_nilai: number;
+  kategori_tinggi: number;
+  kategori_sedang: number;
+  kategori_rendah: number;
+};
 
-function buildMappingFromMock(
-  prodiKode: string,
-  semester: number,
+// ============================ DEFAULT 8 CPLs ============================
+const DEFAULT_CPL_LIST = [
+  { kode: 'CPL1', deskripsi: 'Mampu menunjukkan integritas, etika profesi, nilai-nilai keislaman, tanggung jawab sosial, dan komitmen terhadap keberlanjutan' },
+  { kode: 'CPL2', deskripsi: 'Mampu merancang bangunan, interior, tapak, dan ruang luar secara kreatif, humanis, inklusif, dan berkelanjutan' },
+  { kode: 'CPL3', deskripsi: 'Mampu menganalisis dan mengevaluasi sistem struktur beton, baja, dan konstruksi bangunan lainnya' },
+  { kode: 'CPL4', deskripsi: 'Mampu mengkaji dan mengevaluasi sejarah arsitektur dunia, arsitektur Islam, dan perkembangan arsitektur kontemporer' },
+  { kode: 'CPL5', deskripsi: 'Mampu mengaplikasikan teknologi bangunan, sistem utilitas, dan manajemen konstruksi berkelanjutan' },
+  { kode: 'CPL6', deskripsi: 'Mampu memahami dan menerapkan peraturan bangunan, standar keamanan, serta aspek hukum dan profesionalisme' },
+  { kode: 'CPL7', deskripsi: 'Mampu berkomunikasi secara efektif dan bekerja sama dalam tim multidisiplin' },
+  { kode: 'CPL8', deskripsi: 'Mampu menggunakan teknologi informasi dan perangkat lunak arsitektur untuk mendukung proses perancangan' },
+];
+
+// ============================ HELPER: BUILD MAPPING (dari CPL stats backend) ============================
+
+function buildMappingFromCPLStats(
+  stats: CPLStatItem[],
 ): MappingNode[] {
- return[];
+  // Create a map from backend stats
+  const statsMap = new Map(stats.map(s => [s.kode_cpl, s]));
+
+  // Always return all 8 CPLs, merge with backend stats if available
+  return DEFAULT_CPL_LIST.map((defaultCpl) => {
+    const stat = statsMap.get(defaultCpl.kode);
+    return {
+      cpl: {
+        kode: defaultCpl.kode,
+        deskripsi: stat?.deskripsi ?? defaultCpl.deskripsi,
+      },
+      mkCount: stat?.jumlah_mk ?? 0,
+      mataKuliah: [],
+      totalCPMK: 0,
+    };
+  });
 }
 
 // ============================ KOMPONEN UTAMA ============================
@@ -106,6 +154,7 @@ export default function DashboardPage() {
   const [filteredMahasiswa, setFilteredMahasiswa] = useState<MahasiswaRow[]>([]);
   const [cplScores, setCplScores] = useState<CplScore[]>([]);
   const [mappingData, setMappingData] = useState<MappingNode[]>([]);
+  const [cplStats, setCplStats] = useState<CPLStatItem[]>([]);
 
   // ---------- state misc ----------
   const [refreshKey, setRefreshKey] = useState(0);
@@ -115,6 +164,11 @@ export default function DashboardPage() {
   const [errorProdi, setErrorProdi] = useState<string | null>(null);
   const [errorMahasiswa, setErrorMahasiswa] = useState<string | null>(null);
   const [errorCPL, setErrorCPL] = useState<string | null>(null);
+
+  // ---------- state for CPMK accordion ----------
+  const [expandedMKIds, setExpandedMKIds] = useState<number[]>([]);
+  const [cpmkByMK, setCpmkByMK] = useState<Record<number, CPMKItem[]>>({});
+  const [loadingCPMKFor, setLoadingCPMKFor] = useState<number | null>(null);
 
   // ============================ LISTEN NILAI IMPORT (REFRESH) ============================
 
@@ -236,7 +290,7 @@ export default function DashboardPage() {
         console.error('Error load mahasiswa dashboard:', err);
         setErrorMahasiswa(
           err?.message ||
-            'Gagal mengambil mahasiswa yang sudah punya nilai',
+          'Gagal mengambil mahasiswa yang sudah punya nilai',
         );
         setFilteredMahasiswa([]);
         setSelectedMahasiswa('');
@@ -272,34 +326,28 @@ export default function DashboardPage() {
           return;
         }
 
-        // EXPECTED ENDPOINT:
-        // GET /mahasiswa/:id_mhs/cpl?semester=1
-        const res = await fetch(
-          `${API_BASE}/mahasiswa/${mhs.id}/cpl?semester=${selectedSemester}`,
-          { signal: controller.signal },
+        // Use the new API function with NIM
+        const res = await fetchNilaiCPLByMahasiswa(
+          mhs.npm,
+          selectedSemester,
+          controller.signal,
         );
-        if (!res.ok)
-          throw new Error(`Gagal load nilai CPL: ${res.status}`);
 
-        const rows: any[] = await res.json();
-
-        const scores: CplScore[] = rows.map((row) => {
+        const scores: CplScore[] = (res.cpl || []).map((row) => {
           const nilai = Number(row.nilai_angka ?? 0);
           let status: CplScore['status'];
           if (nilai >= 75) status = 'Tercapai';
           else if (nilai >= 60) status = 'Cukup';
           else status = 'Belum Tercapai';
 
-          const src = row.sumber ?? 'db';
-
           return {
             kode: row.kode_cpl,
-            deskripsi: row.deskripsi,
+            deskripsi: '', // Backend doesn't return deskripsi in this endpoint
             nilai,
-            jumlahMK: Number(row.jumlah_mk ?? 0),
+            jumlahMK: 0, // Not available from this endpoint
             status,
-            source: src,
-            isRealData: src !== 'mockData',
+            source: 'db',
+            isRealData: true,
           };
         });
 
@@ -318,17 +366,133 @@ export default function DashboardPage() {
     return () => controller.abort();
   }, [selectedMahasiswa, selectedSemester, refreshKey, filteredMahasiswa]);
 
-  // ============================ BUILD MAPPING (MASIH DARI MOCK) ============================
+  // ============================ FETCH CPL STATS + MAPPING ============================
 
   useEffect(() => {
     const selectedProdiData = prodiList.find(
       (p) => p.kode_prodi === selectedProdi,
     );
-    const prodiKode = selectedProdiData?.kode_prodi || 'ARS';
+    if (!selectedProdiData) {
+      setMappingData([]);
+      setCplStats([]);
+      return;
+    }
 
-    const mapping = buildMappingFromMock(prodiKode, selectedSemester);
-    setMappingData(mapping);
-  }, [prodiList, selectedProdi, selectedSemester]);
+    const idProdi = selectedProdiData.id_prodi;
+    const controller = new AbortController();
+
+    async function loadCPLData() {
+      try {
+        // Fetch both stats and mapping in parallel
+        const [statsRes, mappingRes] = await Promise.all([
+          fetch(
+            `${API_BASE}/prodi/${idProdi}/cpl-stats?semester=${selectedSemester}`,
+            { signal: controller.signal }
+          ),
+          fetch(
+            `${API_BASE}/prodi/${idProdi}/cpl-mapping?semester=${selectedSemester}`,
+            { signal: controller.signal }
+          ),
+        ]);
+
+        if (!statsRes.ok) throw new Error(`Failed to fetch CPL stats: ${statsRes.status}`);
+        if (!mappingRes.ok) throw new Error(`Failed to fetch CPL mapping: ${mappingRes.status}`);
+
+        const statsData: CPLStatItem[] = await statsRes.json();
+        setCplStats(statsData);
+
+        // Parse CPL mapping data
+        type CPLMappingBackend = {
+          id_cpl: number;
+          kode_cpl: string;
+          deskripsi: string;
+          mk_list: {
+            id_mk: number;
+            kode_mk: string;
+            nama_mk: string;
+            sks: number;
+            semester: number;
+            cpmk_count: number;
+          }[];
+        };
+        const mappingBackend: CPLMappingBackend[] = await mappingRes.json();
+
+        // Build mapping from backend data, merged with default CPLs
+        const mappingMap = new Map(mappingBackend.map(m => [m.kode_cpl, m]));
+        const statsMap = new Map(statsData.map(s => [s.kode_cpl, s]));
+
+        const mapping: MappingNode[] = DEFAULT_CPL_LIST.map((defaultCpl) => {
+          const backendMapping = mappingMap.get(defaultCpl.kode);
+          const stat = statsMap.get(defaultCpl.kode);
+          const mkList = backendMapping?.mk_list ?? [];
+          const totalCPMK = mkList.reduce((sum, mk) => sum + mk.cpmk_count, 0);
+
+          return {
+            cpl: {
+              kode: defaultCpl.kode,
+              deskripsi: backendMapping?.deskripsi ?? stat?.deskripsi ?? defaultCpl.deskripsi,
+            },
+            mkCount: mkList.length,
+            mataKuliah: mkList.map(mk => ({
+              id_mk: mk.id_mk,
+              kode: mk.kode_mk,
+              nama: mk.nama_mk,
+              sks: mk.sks,
+              cpmkCount: mk.cpmk_count,
+              cpmkList: [], // CPMK details fetched on-demand via accordion
+            })),
+            totalCPMK,
+          };
+        });
+
+        setMappingData(mapping);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        console.error('Error load CPL data:', err);
+        setCplStats([]);
+        // Still show default mapping even if fetch fails
+        setMappingData(DEFAULT_CPL_LIST.map(cpl => ({
+          cpl: { kode: cpl.kode, deskripsi: cpl.deskripsi },
+          mkCount: 0,
+          mataKuliah: [],
+          totalCPMK: 0,
+        })));
+      }
+    }
+
+    loadCPLData();
+    return () => controller.abort();
+  }, [prodiList, selectedProdi, selectedSemester, refreshKey]);
+
+  // ============================ TOGGLE MK ACCORDION (FETCH CPMK ON-DEMAND) ============================
+
+  const toggleMKAccordion = async (idMK: number) => {
+    // Toggle expanded state
+    if (expandedMKIds.includes(idMK)) {
+      setExpandedMKIds(prev => prev.filter(id => id !== idMK));
+      return;
+    }
+
+    // Expand and fetch CPMK if not cached
+    setExpandedMKIds(prev => [...prev, idMK]);
+
+    if (cpmkByMK[idMK]) {
+      return; // Already cached
+    }
+
+    setLoadingCPMKFor(idMK);
+    try {
+      const res = await fetch(`${API_BASE}/mk/${idMK}/cpmk`);
+      if (!res.ok) throw new Error(`Failed to fetch CPMK: ${res.status}`);
+      const data: CPMKItem[] = await res.json();
+      setCpmkByMK(prev => ({ ...prev, [idMK]: data }));
+    } catch (err) {
+      console.error('Error fetching CPMK:', err);
+      setCpmkByMK(prev => ({ ...prev, [idMK]: [] }));
+    } finally {
+      setLoadingCPMKFor(null);
+    }
+  };
 
   // ============================ DERIVED DATA ============================
 
@@ -339,21 +503,67 @@ export default function DashboardPage() {
     (m) => m.id === selectedMahasiswa,
   );
 
-  const tercapai = cplScores.filter((c) => c.nilai >= 75).length;
+  const safeCplScores = cplScores ?? [];
+  const tercapai = safeCplScores.filter((c) => c.nilai >= 75).length;
   const rataRata =
-    cplScores.length > 0
+    safeCplScores.length > 0
       ? Math.round(
-          (cplScores.reduce((sum, c) => sum + c.nilai, 0) /
-            cplScores.length) *
-            10,
-        ) / 10
+        (safeCplScores.reduce((sum, c) => sum + c.nilai, 0) /
+          safeCplScores.length) *
+        10,
+      ) / 10
       : 0;
 
-  const radarChartData: RadarPoint[] = cplScores.map((c) => ({
-    subject: c.kode,
-    value: c.nilai,
-    fullMark: 100,
-  }));
+  // Always show all 8 CPLs in radar chart, with value 0 for missing CPLs
+  const radarChartData: RadarPoint[] = DEFAULT_CPL_LIST.map((defaultCpl) => {
+    const score = (cplScores ?? []).find((c) => c.kode === defaultCpl.kode);
+    return {
+      subject: defaultCpl.kode,
+      value: score?.nilai ?? 0,
+      fullMark: 100,
+    };
+  });
+
+  // Build detail table data: all 8 CPLs with deskripsi from stats and nilai from student scores
+  type DetailTableRow = {
+    kode: string;
+    deskripsi: string;
+    jumlahMK: number;
+    nilai: number;
+    status: 'Tercapai' | 'Cukup' | 'Belum Tercapai' | 'Tidak Ada Data';
+    hasData: boolean; // true if CPL has MK in this semester
+  };
+
+  const detailTableData: DetailTableRow[] = DEFAULT_CPL_LIST.map((defaultCpl) => {
+    const stat = (cplStats ?? []).find((s) => s.kode_cpl === defaultCpl.kode);
+    const score = (cplScores ?? []).find((c) => c.kode === defaultCpl.kode);
+    const mapping = (mappingData ?? []).find((m) => m.cpl.kode === defaultCpl.kode);
+
+    const nilai = score?.nilai ?? 0;
+    // Use mkCount from mapping data (semester-filtered)
+    const jumlahMK = mapping?.mkCount ?? 0;
+    const hasData = jumlahMK > 0;
+
+    let status: DetailTableRow['status'];
+    if (!hasData) {
+      status = 'Tidak Ada Data';
+    } else if (nilai >= 75) {
+      status = 'Tercapai';
+    } else if (nilai >= 50) {
+      status = 'Cukup';
+    } else {
+      status = 'Belum Tercapai';
+    }
+
+    return {
+      kode: defaultCpl.kode,
+      deskripsi: mapping?.cpl.deskripsi ?? stat?.deskripsi ?? defaultCpl.deskripsi,
+      jumlahMK,
+      nilai,
+      status,
+      hasData,
+    };
+  });
 
   // ============================ RENDER ============================
 
@@ -487,7 +697,7 @@ export default function DashboardPage() {
             <div>
               <p className="text-blue-100 text-sm font-medium">CPL Tercapai</p>
               <h3 className="text-4xl font-bold mt-2">
-                {tercapai}/{cplScores.length}
+                {tercapai}/{safeCplScores.length}
               </h3>
               <p className="text-blue-100 text-sm mt-1">≥ 75 poin</p>
             </div>
@@ -518,11 +728,11 @@ export default function DashboardPage() {
                 {rataRata >= 75
                   ? 'Sangat Baik'
                   : rataRata >= 60
-                  ? 'Baik'
-                  : 'Perlu Perbaikan'}
+                    ? 'Baik'
+                    : 'Perlu Perbaikan'}
               </h3>
               <p className="text-cyan-100 text-sm mt-1">
-                {cplScores.filter((c) => c.nilai > 0).length} CPL terdata
+                {safeCplScores.filter((c) => c.nilai > 0).length} CPL terdata
               </p>
             </div>
           </div>
@@ -548,9 +758,8 @@ export default function DashboardPage() {
                 <div className="flex items-start gap-3">
                   <div className="flex flex-col items-center">
                     <div
-                      className={`w-3 h-3 rounded-full ${
-                        item.mkCount > 0 ? 'bg-blue-500' : 'bg-gray-300'
-                      }`}
+                      className={`w-3 h-3 rounded-full ${item.mkCount > 0 ? 'bg-blue-500' : 'bg-gray-300'
+                        }`}
                     ></div>
                     {item.mkCount > 0 && (
                       <div className="w-0.5 h-full bg-blue-300 mt-1"></div>
@@ -584,11 +793,10 @@ export default function DashboardPage() {
                           <div key={mkIdx} className="flex items-start gap-3">
                             <div className="flex flex-col items-center pt-2">
                               <div
-                                className={`w-2.5 h-2.5 rounded-full ${
-                                  mk.cpmkCount > 0
-                                    ? 'bg-green-500'
-                                    : 'bg-gray-300'
-                                }`}
+                                className={`w-2.5 h-2.5 rounded-full ${mk.cpmkCount > 0
+                                  ? 'bg-green-500'
+                                  : 'bg-gray-300'
+                                  }`}
                               ></div>
                               {mk.cpmkCount > 0 && (
                                 <div className="w-0.5 h-full bg-green-300 mt-1"></div>
@@ -596,7 +804,12 @@ export default function DashboardPage() {
                             </div>
 
                             <div className="flex-1">
-                              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-lg p-2.5">
+                              {/* MK Card - Clickable Accordion */}
+                              <div
+                                onClick={() => mk.cpmkCount > 0 && toggleMKAccordion(mk.id_mk)}
+                                className={`bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-lg p-2.5 ${mk.cpmkCount > 0 ? 'cursor-pointer hover:border-green-400 transition-colors' : ''
+                                  }`}
+                              >
                                 <div className="flex items-start gap-2 mb-1">
                                   <span className="bg-green-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap">
                                     {mk.kode}
@@ -611,40 +824,61 @@ export default function DashboardPage() {
                                     </p>
                                   </div>
                                   {mk.cpmkCount > 0 && (
-                                    <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-medium">
+                                    <button className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1">
                                       {mk.cpmkCount} CPMK
-                                    </span>
+                                      <span className={`transition-transform ${expandedMKIds.includes(mk.id_mk) ? 'rotate-180' : ''}`}>
+                                        ▼
+                                      </span>
+                                    </button>
                                   )}
                                 </div>
                               </div>
 
-                              {/* CPMK Nodes */}
-                              {mk.cpmkList.length > 0 && (
-                                <div className="mt-2 space-y-2">
-                                  {mk.cpmkList.map((cpmk, cpmkIdx) => (
-                                    <div
-                                      key={cpmkIdx}
-                                      className="flex items-start gap-3"
-                                    >
-                                      <div className="flex flex-col items-center pt-1.5">
-                                        <div className="w-2 h-2 rounded-full bg-purple-400"></div>
-                                      </div>
+                              {/* CPMK Accordion Content */}
+                              {expandedMKIds.includes(mk.id_mk) && (
+                                <div className="mt-2 space-y-2 animate-in slide-in-from-top-2">
+                                  {loadingCPMKFor === mk.id_mk ? (
+                                    <div className="flex items-center gap-2 p-2 text-xs text-gray-500">
+                                      <div className="w-4 h-4 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin"></div>
+                                      Memuat CPMK...
+                                    </div>
+                                  ) : (cpmkByMK[mk.id_mk] ?? []).length > 0 ? (
+                                    (cpmkByMK[mk.id_mk] ?? []).map((cpmk, cpmkIdx) => (
+                                      <div
+                                        key={cpmk.id_cpmk}
+                                        className="flex items-start gap-3"
+                                      >
+                                        <div className="flex flex-col items-center pt-1.5">
+                                          <div className="w-2 h-2 rounded-full bg-purple-400"></div>
+                                        </div>
 
-                                      <div className="flex-1 bg-purple-50 border border-purple-200 rounded-md p-2">
-                                        <div className="flex items-start gap-2">
-                                          <div className="w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
-                                            {cpmkIdx + 1}
+                                        <div className="flex-1 bg-purple-50 border border-purple-200 rounded-md p-2">
+                                          <div className="flex items-start gap-2">
+                                            <div className="w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                                              {cpmkIdx + 1}
+                                            </div>
+                                            <div className="flex-1">
+                                              <p className="text-xs font-semibold text-purple-700">
+                                                {cpmk.kode_cpmk}
+                                              </p>
+                                              <p className="text-xs text-gray-700 leading-tight mt-0.5">
+                                                {cpmk.deskripsi}
+                                              </p>
+                                            </div>
+                                            {cpmk.bobot_cpmk !== null && (
+                                              <span className="bg-purple-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap">
+                                                {(cpmk.bobot_cpmk * 100).toFixed(0)}%
+                                              </span>
+                                            )}
                                           </div>
-                                          <p className="text-xs text-gray-700 flex-1 leading-tight">
-                                            {cpmk.deskripsi}
-                                          </p>
-                                          <span className="bg-purple-500 text-white px-2 py-0.5 rounded text-xs font-bold whitespace-nowrap">
-                                            {cpmk.bobot}%
-                                          </span>
                                         </div>
                                       </div>
+                                    ))
+                                  ) : (
+                                    <div className="text-xs text-gray-400 italic p-2">
+                                      Tidak ada data CPMK
                                     </div>
-                                  ))}
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -723,66 +957,55 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {errorCPL && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-4 text-sm text-red-600 text-center"
-                  >
-                    {errorCPL}
+              {detailTableData.map((cpl, idx) => (
+                <tr key={idx} className={`hover:bg-blue-50 transition-colors ${!cpl.hasData ? 'bg-red-50' : ''}`}>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-bold ${cpl.hasData ? 'text-blue-700' : 'text-red-600'}`}>
+                    {cpl.kode}
                   </td>
-                </tr>
-              )}
-
-              {!errorCPL && cplScores.length === 0 && (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-6 py-4 text-sm text-gray-500 text-center"
-                  >
-                    {selectedMahasiswa
-                      ? 'Belum ada nilai CPL untuk mahasiswa & semester ini.'
-                      : 'Silakan pilih mahasiswa terlebih dahulu.'}
+                  <td className={`px-6 py-4 text-sm ${cpl.hasData ? 'text-gray-700' : 'text-red-500'}`}>
+                    {cpl.deskripsi}
                   </td>
-                </tr>
-              )}
-
-              {!errorCPL &&
-                cplScores.map((cpl, idx) => (
-                  <tr key={idx} className="hover:bg-blue-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-700">
-                      {cpl.kode}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-700">
-                      {cpl.deskripsi}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                        {cpl.jumlahMK} MK
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-800">
-                        {cpl.nilai.toFixed(1)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${
-                          cpl.status === 'Tercapai'
-                            ? 'bg-green-100 text-green-700 border border-green-300'
-                            : cpl.status === 'Cukup'
-                            ? 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${cpl.jumlahMK > 0 ? 'bg-gray-100 text-gray-700' : 'bg-red-100 text-red-600'}`}>
+                      {cpl.jumlahMK} MK
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${cpl.hasData ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-400'}`}>
+                      {cpl.hasData ? cpl.nilai.toFixed(1) : '-'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <span
+                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${cpl.status === 'Tercapai'
+                        ? 'bg-green-100 text-green-700 border border-green-300'
+                        : cpl.status === 'Cukup'
+                          ? 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                          : cpl.status === 'Tidak Ada Data'
+                            ? 'bg-gray-100 text-gray-500 border border-gray-300'
                             : 'bg-red-100 text-red-700 border border-red-300'
                         }`}
-                      >
-                        {cpl.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                    >
+                      {cpl.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
+        </div>
+        {/* Legend for colors */}
+        <div className="p-4 border-t border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-4 text-xs text-gray-600">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-red-500"></span>
+              <span>CPL tidak memiliki MK terkait di semester ini</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+              <span>CPL memiliki MK terkait</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>
