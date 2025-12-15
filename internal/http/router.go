@@ -48,6 +48,7 @@ func NewRouter() *gin.Engine {
 
 		// NILAI CPL PER MAHASISWA
 		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
+		api.GET("/mahasiswa/:nim/nilai-mk", getNilaiMKByMahasiswaHandler)
 
 		// (Endpoint lain seperti /prodi/:id_prodi/mahasiswa-nilai atau
 		//  /mahasiswa/:nim/cpl bisa kamu daftarkan di sini juga,

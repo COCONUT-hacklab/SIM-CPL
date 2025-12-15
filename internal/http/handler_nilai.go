@@ -200,3 +200,64 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 		"cpl":      respList,
 	})
 }
+
+// GET /api/mahasiswa/:nim/nilai-mk?semester=1
+// Returns nilai_mk (grades) for each MK taken by the student in the given semester
+func getNilaiMKByMahasiswaHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+	nim := c.Param("nim")
+	semStr := c.Query("semester")
+
+	if semStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "semester wajib diisi"})
+		return
+	}
+
+	sem, err := strconv.ParseUint(semStr, 10, 8)
+	if err != nil || sem == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "semester tidak valid"})
+		return
+	}
+
+	// Get mahasiswa by NIM
+	var mhs model.Mahasiswa
+	if err := db.DB.WithContext(ctx).Where("nim = ?", nim).Take(&mhs).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "mahasiswa tidak ditemukan"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "db error mahasiswa"})
+		}
+		return
+	}
+
+	// Query nilai_mk with MK details
+	type nilaiMKResult struct {
+		IDMK       uint64  `json:"id_mk"`
+		KodeMK     string  `json:"kode_mk"`
+		NamaMK     string  `json:"nama_mk"`
+		SKS        uint8   `json:"sks"`
+		NilaiAngka float64 `json:"nilai_angka"`
+		NilaiHuruf *string `json:"nilai_huruf"`
+	}
+
+	var results []nilaiMKResult
+	err = db.DB.WithContext(ctx).
+		Table("nilai_mk").
+		Select("mk.id_mk, mk.kode_mk, mk.nama_mk, mk.sks, nilai_mk.nilai_angka, nilai_mk.nilai_huruf").
+		Joins("JOIN mk ON mk.id_mk = nilai_mk.id_mk").
+		Where("nilai_mk.id_mhs = ? AND nilai_mk.semester_tempuh = ?", mhs.IDMhs, sem).
+		Order("mk.kode_mk").
+		Scan(&results).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error nilai_mk"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"nim":      mhs.NIM,
+		"nama":     mhs.Nama,
+		"semester": sem,
+		"nilai_mk": results,
+	})
+}
