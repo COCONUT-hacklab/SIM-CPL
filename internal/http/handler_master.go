@@ -66,7 +66,62 @@ func listMKByProdiSemesterHandler(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, mkList)
+	// Get all MK IDs for batch query
+	mkIDs := make([]uint64, len(mkList))
+	for i, mk := range mkList {
+		mkIDs[i] = mk.IDMK
+	}
+
+	// Query CPL relations for all MKs in one batch
+	type cplMKJoin struct {
+		IDMK    uint64 `gorm:"column:id_mk"`
+		KodeCPL string `gorm:"column:kode_cpl"`
+	}
+	var cplMKs []cplMKJoin
+	if len(mkIDs) > 0 {
+		db.DB.WithContext(ctx).
+			Table("cpl_mk").
+			Select("cpl_mk.id_mk, cpl.kode_cpl").
+			Joins("JOIN cpl ON cpl.id_cpl = cpl_mk.id_cpl").
+			Where("cpl_mk.id_mk IN ?", mkIDs).
+			Find(&cplMKs)
+	}
+
+	// Build map of MK ID -> []CPL kode
+	cplMap := make(map[uint64][]string)
+	for _, cm := range cplMKs {
+		cplMap[cm.IDMK] = append(cplMap[cm.IDMK], cm.KodeCPL)
+	}
+
+	// Build response with cpl_terkait
+	type mkResp struct {
+		IDMK       uint64   `json:"id_mk"`
+		IDProdi    uint64   `json:"id_prodi"`
+		KodeMK     string   `json:"kode_mk"`
+		NamaMK     string   `json:"nama_mk"`
+		SKS        uint8    `json:"sks"`
+		Semester   uint8    `json:"semester"`
+		CPLTerkait []string `json:"cpl_terkait"`
+	}
+
+	respList := make([]mkResp, len(mkList))
+	for i, mk := range mkList {
+		respList[i] = mkResp{
+			IDMK:       mk.IDMK,
+			IDProdi:    mk.IDProdi,
+			KodeMK:     mk.KodeMK,
+			NamaMK:     mk.NamaMK,
+			SKS:        mk.SKS,
+			Semester:   mk.Semester,
+			CPLTerkait: cplMap[mk.IDMK],
+		}
+		// Ensure not nil
+		if respList[i].CPLTerkait == nil {
+			respList[i].CPLTerkait = []string{}
+		}
+	}
+
+	c.JSON(http.StatusOK, respList)
 }
 
 // GET /api/prodi/:id_prodi/cpl
@@ -90,6 +145,105 @@ func listCPLByProdiHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, list)
+}
+
+// GET /api/prodi/:id_prodi/stats
+// Returns comprehensive prodi statistics for the Per Prodi tab
+func getProdiStatsHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	idStr := c.Param("id_prodi")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id_prodi"})
+		return
+	}
+
+	// Get prodi info
+	var prodi model.Prodi
+	if err := db.DB.WithContext(ctx).Where("id_prodi = ?", id).First(&prodi).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "prodi not found"})
+		return
+	}
+
+	// Count mahasiswa per angkatan
+	type angkatanCount struct {
+		Angkatan int   `gorm:"column:angkatan"`
+		Jumlah   int64 `gorm:"column:jumlah"`
+	}
+	var angkatanDist []angkatanCount
+	db.DB.WithContext(ctx).
+		Table("mahasiswa").
+		Select("angkatan, COUNT(*) as jumlah").
+		Where("id_prodi = ?", id).
+		Group("angkatan").
+		Order("angkatan").
+		Scan(&angkatanDist)
+
+	// Count mahasiswa by status
+	type statusCount struct {
+		Status string `gorm:"column:status"`
+		Jumlah int64  `gorm:"column:jumlah"`
+	}
+	var statusDist []statusCount
+	db.DB.WithContext(ctx).
+		Table("mahasiswa").
+		Select("status, COUNT(*) as jumlah").
+		Where("id_prodi = ?", id).
+		Group("status").
+		Scan(&statusDist)
+
+	// Total mahasiswa
+	var totalMahasiswa int64
+	db.DB.WithContext(ctx).Model(&model.Mahasiswa{}).Where("id_prodi = ?", id).Count(&totalMahasiswa)
+
+	// Total MK
+	var totalMK int64
+	db.DB.WithContext(ctx).Model(&model.MK{}).Where("id_prodi = ?", id).Count(&totalMK)
+
+	// Total CPL
+	var totalCPL int64
+	db.DB.WithContext(ctx).Model(&model.CPL{}).Where("id_prodi = ?", id).Count(&totalCPL)
+
+	// Total nilai MK records
+	var totalNilaiMK int64
+	db.DB.WithContext(ctx).
+		Table("nilai_mk").
+		Joins("JOIN mahasiswa ON mahasiswa.id_mhs = nilai_mk.id_mhs").
+		Where("mahasiswa.id_prodi = ?", id).
+		Count(&totalNilaiMK)
+
+	// Build distribusi angkatan response
+	distribusiAngkatan := make([]gin.H, len(angkatanDist))
+	for i, a := range angkatanDist {
+		distribusiAngkatan[i] = gin.H{
+			"angkatan": a.Angkatan,
+			"jumlah":   a.Jumlah,
+		}
+	}
+
+	// Build distribusi status response
+	distribusiStatus := make([]gin.H, len(statusDist))
+	for i, s := range statusDist {
+		distribusiStatus[i] = gin.H{
+			"status": s.Status,
+			"jumlah": s.Jumlah,
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"prodi": gin.H{
+			"id_prodi":   prodi.IDProdi,
+			"kode_prodi": prodi.KodeProdi,
+			"nama_prodi": prodi.NamaProdi,
+		},
+		"total_mahasiswa":     totalMahasiswa,
+		"total_mk":            totalMK,
+		"total_cpl":           totalCPL,
+		"total_nilai_mk":      totalNilaiMK,
+		"distribusi_angkatan": distribusiAngkatan,
+		"distribusi_status":   distribusiStatus,
+	})
 }
 
 // GET /api/mk/:id_mk/cpmk
@@ -125,6 +279,7 @@ func listCPMKByMKHandler(c *gin.Context) {
 }
 
 // GET /api/prodi/:id_prodi/cpl-stats?semester=1
+// If semester is omitted, returns overall CPL stats across all semesters
 func getCPLStatsByProdiSemesterHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 
@@ -136,18 +291,20 @@ func getCPLStatsByProdiSemesterHandler(c *gin.Context) {
 	}
 
 	semStr := c.Query("semester")
-	if semStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "semester wajib diisi"})
-		return
-	}
-	sem, err := strconv.Atoi(semStr)
-	if err != nil || sem <= 0 || sem > 20 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid semester"})
-		return
-	}
 
 	var rows []CPLStat
-	query := `
+	var query string
+	var args []any
+
+	if semStr != "" {
+		// Specific semester filter
+		sem, err := strconv.Atoi(semStr)
+		if err != nil || sem <= 0 || sem > 20 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid semester"})
+			return
+		}
+
+		query = `
 SELECT
     c.id_cpl,
     c.kode_cpl,
@@ -167,8 +324,32 @@ WHERE c.id_prodi = ?
 GROUP BY c.id_cpl, c.kode_cpl, c.deskripsi
 ORDER BY c.kode_cpl
 `
+		args = []any{sem, idProdi}
+	} else {
+		// Overall stats (no semester filter)
+		query = `
+SELECT
+    c.id_cpl,
+    c.kode_cpl,
+    c.deskripsi,
+    COUNT(nc.id_mhs) AS jumlah_mahasiswa,
+    COALESCE(AVG(nc.nilai_angka), 0) AS rata_nilai,
+    COALESCE(MIN(nc.nilai_angka), 0) AS min_nilai,
+    COALESCE(MAX(nc.nilai_angka), 0) AS max_nilai,
+    SUM(CASE WHEN nc.nilai_angka >= 70 THEN 1 ELSE 0 END) AS kategori_tinggi,
+    SUM(CASE WHEN nc.nilai_angka >= 50 AND nc.nilai_angka < 70 THEN 1 ELSE 0 END) AS kategori_sedang,
+    SUM(CASE WHEN nc.nilai_angka < 50 THEN 1 ELSE 0 END) AS kategori_rendah
+FROM cpl c
+LEFT JOIN nilai_cpl nc ON nc.id_cpl = c.id_cpl
+WHERE c.id_prodi = ?
+GROUP BY c.id_cpl, c.kode_cpl, c.deskripsi
+ORDER BY c.kode_cpl
+`
+		args = []any{idProdi}
+	}
+
 	if err := db.DB.WithContext(ctx).
-		Raw(query, sem, idProdi).
+		Raw(query, args...).
 		Scan(&rows).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpl stats"})
 		return

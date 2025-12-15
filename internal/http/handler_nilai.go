@@ -154,7 +154,11 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 		cplIDs = append(cplIDs, n.IDCPL)
 	}
 
-	cplMap := map[uint64]string{}
+	type cplInfo struct {
+		Kode      string
+		Deskripsi string
+	}
+	cplMap := map[uint64]cplInfo{}
 	if len(cplIDs) > 0 {
 		var cpls []model.CPL
 		if err := db.DB.WithContext(ctx).
@@ -164,19 +168,27 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 			return
 		}
 		for _, cpl := range cpls {
-			cplMap[cpl.IDCPL] = cpl.KodeCPL
+			cplMap[cpl.IDCPL] = cplInfo{
+				Kode:      cpl.KodeCPL,
+				Deskripsi: cpl.Deskripsi,
+			}
 		}
 	}
 
 	type cplResp struct {
+		IDCPL      uint64  `json:"id_cpl"`
 		KodeCPL    string  `json:"kode_cpl"`
+		Deskripsi  string  `json:"deskripsi"`
 		NilaiAngka float64 `json:"nilai_angka"`
 	}
 
 	respList := make([]cplResp, 0, len(list))
 	for _, n := range list {
+		info := cplMap[n.IDCPL]
 		respList = append(respList, cplResp{
-			KodeCPL:    cplMap[n.IDCPL],
+			IDCPL:      n.IDCPL,
+			KodeCPL:    info.Kode,
+			Deskripsi:  info.Deskripsi,
 			NilaiAngka: n.NilaiAngka,
 		})
 	}

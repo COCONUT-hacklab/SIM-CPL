@@ -28,6 +28,7 @@ func NewRouter() *gin.Engine {
 		api.GET("/prodi", listProdiHandler)
 		api.GET("/prodi/:id_prodi/mk", listMKByProdiSemesterHandler)
 		api.GET("/prodi/:id_prodi/cpl", listCPLByProdiHandler)
+		api.GET("/prodi/:id_prodi/stats", getProdiStatsHandler)
 		api.GET("/mk/:id_mk/cpmk", listCPMKByMKHandler)
 
 		// STATISTIK CPL PER PRODI + SEMESTER
