@@ -3,6 +3,8 @@ package http
 import (
 	"time"
 
+	"cpmk/internal/middleware" // Pastikan folder middleware sudah ada
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
@@ -10,49 +12,71 @@ import (
 func NewRouter() *gin.Engine {
 	r := gin.Default()
 
+	// Konfigurasi CORS (Sesuai kode lama Anda)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // Allow all origins
+		AllowOrigins:     []string{"*"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "X-Requested-With"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "X-Requested-With", "Authorization", "ngrok-skip-browser-warning"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: false,
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// health
+	// Endpoint Health Check (Bisa diakses siapa saja)
 	r.GET("/health", healthHandler)
 
 	api := r.Group("/api")
 	{
-		// MASTER DATA
+		// ==============================
+		// 1. PUBLIC ROUTES (Tanpa Login)
+		// ==============================
+		api.POST("/login", loginHandler) // <-- Endpoint Login Baru
 		api.GET("/prodi", listProdiHandler)
+
 		api.GET("/prodi/:id_prodi/mk", listMKByProdiSemesterHandler)
 		api.GET("/prodi/:id_prodi/cpl", listCPLByProdiHandler)
 		api.GET("/prodi/:id_prodi/stats", getProdiStatsHandler)
 		api.GET("/mk/:id_mk/cpmk", listCPMKByMKHandler)
 
-		// STATISTIK CPL PER PRODI + SEMESTER
+		// STATISTIK CPL
 		api.GET("/prodi/:id_prodi/cpl-stats", getCPLStatsByProdiSemesterHandler)
-
-		// CPL MAPPING (CPL -> MK -> CPMK)
 		api.GET("/prodi/:id_prodi/cpl-mapping", getCPLMappingHandler)
 
-		// IMPORT NILAI MK
-		// (kalau handler kamu namanya importNilaiJSONHandler, ganti di sini)
+		// IMPORT & ADMIN (Tadi error karena duplikat, sekarang aman)
 		api.POST("/nilai-mk/import", importNilaiHandler)
-
-		// ADMIN – RECALC BOBOT CPL-MK & MK-CPMK
 		api.POST("/prodi/:id_prodi/recalc-bobot", recalcBobotHandler)
 
+		// MAHASISWA & NILAI
 		api.GET("/prodi/:id_prodi/mahasiswa-nilai", listMahasiswaDenganNilaiHandler)
-
-		// NILAI CPL PER MAHASISWA
 		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
 		api.GET("/mahasiswa/:nim/nilai-mk", getNilaiMKByMahasiswaHandler)
 
-		// (Endpoint lain seperti /prodi/:id_prodi/mahasiswa-nilai atau
-		//  /mahasiswa/:nim/cpl bisa kamu daftarkan di sini juga,
-		//  disesuaikan dengan file handler_nilai.go yang sekarang.)
+		// ==============================
+		// 2. PROTECTED ROUTES (Wajib Token/Login)
+		// ==============================
+		protected := api.Group("/midd")
+		protected.Use(middleware.AuthMiddleware()) // Pasang Gembok di sini
+		{
+			// MASTER DATA
+			protected.GET("/prodi", listProdiHandler)
+			protected.GET("/prodi/:id_prodi/mk", listMKByProdiSemesterHandler)
+			protected.GET("/prodi/:id_prodi/cpl", listCPLByProdiHandler)
+			protected.GET("/prodi/:id_prodi/stats", getProdiStatsHandler)
+			protected.GET("/mk/:id_mk/cpmk", listCPMKByMKHandler)
+
+			// STATISTIK CPL
+			protected.GET("/prodi/:id_prodi/cpl-stats", getCPLStatsByProdiSemesterHandler)
+			protected.GET("/prodi/:id_prodi/cpl-mapping", getCPLMappingHandler)
+
+			// IMPORT & ADMIN (Tadi error karena duplikat, sekarang aman)
+			protected.POST("/nilai-mk/import", importNilaiHandler)
+			protected.POST("/prodi/:id_prodi/recalc-bobot", recalcBobotHandler)
+
+			// MAHASISWA & NILAI
+			protected.GET("/prodi/:id_prodi/mahasiswa-nilai", listMahasiswaDenganNilaiHandler)
+			protected.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
+			protected.GET("/mahasiswa/:nim/nilai-mk", getNilaiMKByMahasiswaHandler)
+		}
 	}
 
 	return r

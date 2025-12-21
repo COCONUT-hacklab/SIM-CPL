@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"cpmk/internal/db"
+	"cpmk/internal/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -72,4 +73,22 @@ ORDER BY
 	}
 
 	c.JSON(http.StatusOK, rows)
+}
+
+func listAngkatanHandler(c *gin.Context) {
+	idProdi := c.Param("id_prodi")
+	var angkatans []int
+
+	// Ambil daftar angkatan unik dari tabel mahasiswa
+	err := db.DB.Model(&model.Mahasiswa{}).
+		Where("id_prodi = ?", idProdi).
+		Distinct().
+		Order("angkatan DESC").
+		Pluck("angkatan", &angkatans).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal ambil data angkatan"})
+		return
+	}
+	c.JSON(http.StatusOK, angkatans)
 }
