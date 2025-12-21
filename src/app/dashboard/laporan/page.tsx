@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 // API Base URL
@@ -68,6 +69,8 @@ export default function LaporanPage() {
   const [loadingMahasiswa, setLoadingMahasiswa] = useState(false);
   const [loadingLaporan, setLoadingLaporan] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  
 
   // Listen to nilai updates from import
   useEffect(() => {
@@ -167,13 +170,24 @@ export default function LaporanPage() {
         );
       }
 
-      // Also fetch CPL mapping for the selected semester to build cpmkBreakdown
-      const [semesterResults, mappingRes] = await Promise.all([
+      // Also fetch CPL mapping and nilai MK for the selected semester
+      const [semesterResults, mappingRes, nilaiMKRes] = await Promise.all([
         Promise.all(semesterRequests),
         fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/cpl-mapping?semester=${selectedSemester}`)
           .then(res => res.ok ? res.json() : [])
-          .catch(() => [])
+          .catch(() => []),
+        fetch(`${API_BASE}/mahasiswa/${selectedMahasiswa.nim}/nilai-mk?semester=${selectedSemester}`)
+          .then(res => res.ok ? res.json() : { nilai_mk: [] })
+          .catch(() => ({ nilai_mk: [] }))
       ]);
+
+      // Build nilai MK map for quick lookup
+      type NilaiMKItem = { id_mk: number; kode_mk: string; nama_mk: string; sks: number; nilai_angka: number };
+      const nilaiMKList: NilaiMKItem[] = nilaiMKRes?.nilai_mk || [];
+      const nilaiMKMap: { [kodeMK: string]: number } = {};
+      nilaiMKList.forEach(n => {
+        nilaiMKMap[n.kode_mk.toLowerCase()] = n.nilai_angka;
+      });
 
       // Build trend data and overall CPL achievement
       const trendData: { semester: string; 'Rata-rata CPL': number }[] = [];
@@ -257,7 +271,7 @@ export default function LaporanPage() {
                 mkNama: mk.nama_mk,
                 sks: mk.sks,
                 bobotMK,
-                nilaiMK: cplScore?.nilai_angka ?? 0, // Simplified - would need actual MK nilai
+                nilaiMK: nilaiMKMap[mk.kode_mk.toLowerCase()] ?? 0, // Actual MK nilai from API
                 cpmkList: cpmkList.map((cpmk, idx) => ({
                   cpmkKode: cpmk.kode_cpmk,
                   deskripsi: cpmk.deskripsi,
@@ -442,9 +456,80 @@ export default function LaporanPage() {
     }
   };
 
-  const handleExport = (format: 'pdf' | 'excel') => {
-    alert(`Export ke ${format.toUpperCase()} akan segera tersedia!`);
-  };
+
+    const sortedCPLData = useMemo(() => {
+    // Mengambil data dari state laporanData yang Anda miliki
+    const dataCPL = laporanData?.cplOverallData || laporanData?.cplScores || [];
+    if (!Array.isArray(dataCPL)) return [];
+
+    return [...dataCPL].sort((a: any, b: any) => {
+      // Mencari kode CPL dari berbagai kemungkinan properti di objek Anda
+      const kodeA = a.kode || a.kode_cpl || a.cplKode || '';
+      const kodeB = b.kode || b.kode_cpl || b.cplKode || '';
+      
+      // Ekstrak angka agar urutan CPL 1 s/d 8 konsisten secara numerik
+      const numA = parseInt(kodeA.replace(/\D/g, '')) || 0;
+      const numB = parseInt(kodeB.replace(/\D/g, '')) || 0;
+      return numA - numB;
+    });
+  }, [laporanData]);
+
+
+const handleExport = async (format: 'pdf' | 'excel') => {
+  if (!laporanData) return alert("Silakan tampilkan data terlebih dahulu!");
+
+  const fileName = `Laporan_CPL_${viewMode}_${selectedMahasiswa?.nim || 'Prodi'}`;
+
+  // --- LOGIKA EXPORT EXCEL ---
+  if (format === 'excel') {
+    // Menyiapkan data untuk Excel (Diambil dari urutan CPL yang sudah disortir)
+    const dataToExport = sortedCPLData.map((item: any) => ({
+      'Kode CPL': item.kode || item.kode_cpl,
+      'Deskripsi': item.deskripsi,
+      'Nilai Angka': item.nilai_angka || item.avgNilai,
+      'Status': (item.nilai_angka || item.avgNilai) >= 75 ? 'Tercapai' : 'Kurang'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Data Capaian CPL");
+    XLSX.writeFile(workbook, `${fileName}.xlsx`);
+  } 
+else if (format === 'pdf') {
+    const reportElement = document.getElementById('report-container');
+    if (!reportElement) return alert("Elemen laporan tidak ditemukan!");
+
+    // Opsi konfigurasi untuk multi-page PDF
+    const html2pdf = (await import('html2pdf.js')).default;
+    const opt: any = {
+      margin: [10, 10,10,10] as const, // Margin atas, bawah, kiri, kanan (dalam mm)
+      filename: `${fileName}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true, 
+        letterRendering: true 
+      },
+      jsPDF: { 
+        unit: 'mm', 
+        format: 'a4', 
+        orientation: 'portrait' 
+      },
+      // Mode pagebreak agar tidak memotong grafik di tengah
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    try {
+      setLoadingLaporan(true);
+      // Eksekusi konversi ke PDF
+      await html2pdf().set(opt).from(reportElement).save();
+    } catch (err) {
+      console.error("Gagal membuat PDF:", err);
+    } finally {
+      setLoadingLaporan(false);
+    }
+  }
+};
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -592,7 +677,7 @@ export default function LaporanPage() {
 
       {/* Laporan Content */}
       {viewMode === 'mahasiswa' && laporanData && laporanData.mahasiswa && (
-        <div className="space-y-6">
+        <div id="report-container" className="space-y-6">
           {/* Student Info Card */}
           <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl shadow-lg p-6 text-white">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -622,6 +707,7 @@ export default function LaporanPage() {
               </div>
             </div>
           </div>
+          
 
           {/* Tab Navigation */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -782,7 +868,6 @@ export default function LaporanPage() {
                         </ResponsiveContainer>
                       </div>
                     </div>
-
                     {/* CPL Details Table */}
                     <div className="mt-6">
                       <h4 className="text-md font-semibold text-gray-700 mb-3">
@@ -818,16 +903,16 @@ export default function LaporanPage() {
                                     {cpl.jumlahSemester} semester
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 text-center">
+                                <td className="px-5 py-3 text-center">
                                   <span
-                                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${cpl.avgNilai >= 75
+                                    className={`inline-flex items-center px-4 py-1 rounded-full text-xs font-semibold ${cpl.avgNilai >= 70
                                       ? 'bg-green-100 text-green-800'
-                                      : cpl.avgNilai >= 60
+                                      : cpl.avgNilai >= 50
                                         ? 'bg-yellow-100 text-yellow-800'
                                         : 'bg-red-100 text-red-800'
                                       }`}
                                   >
-                                    {cpl.avgNilai >= 75 ? '✓ Tercapai' : cpl.avgNilai >= 60 ? '~ Cukup' : '✗ Belum Tercapai'}
+                                    {cpl.avgNilai >= 70 ? '✓ Tercapai' : cpl.avgNilai >= 50 ? '~ Cukup' : '✗ Belum Tercapai'}
                                   </span>
                                 </td>
                               </tr>
@@ -851,7 +936,7 @@ export default function LaporanPage() {
                             <span className="text-xs font-medium text-yellow-600 bg-yellow-100 px-2 py-1 rounded">CPL Cukup (50-69)</span>
                           </div>
                           <p className="text-3xl font-bold text-yellow-600">
-                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai >= 50 && c.avgNilai < 70).length}
+                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai >= 50 && c.avgNilai <= 69).length}
                           </p>
                         </div>
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -859,7 +944,7 @@ export default function LaporanPage() {
                             <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-1 rounded">CPL Belum Tercapai (0-49)</span>
                           </div>
                           <p className="text-3xl font-bold text-red-600">
-                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai < 50).length}
+                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai <= 49).length}
                           </p>
                         </div>
                       </div>
@@ -940,14 +1025,14 @@ export default function LaporanPage() {
                                 {cpl.nilaiCPL}
                               </span>
                               <span
-                                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cpl.nilaiCPL >= 75
+                                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cpl.nilaiCPL >= 70
                                   ? 'bg-green-100 text-green-800'
-                                  : cpl.nilaiCPL >= 60
+                                  : cpl.nilaiCPL >= 50
                                     ? 'bg-yellow-100 text-yellow-800'
                                     : 'bg-red-100 text-red-800'
                                   }`}
                               >
-                                {cpl.nilaiCPL >= 75 ? 'Tercapai' : cpl.nilaiCPL >= 60 ? 'Cukup' : 'Belum Tercapai'}
+                                {cpl.nilaiCPL >= 70 ? 'Tercapai' : cpl.nilaiCPL >= 50 ? 'Cukup' : 'Belum Tercapai'}
                               </span>
                             </div>
                           </div>
@@ -1009,7 +1094,6 @@ export default function LaporanPage() {
                                           <th className="pb-2 text-left font-medium">CPMK</th>
                                           <th className="pb-2 text-left font-medium">Deskripsi</th>
                                           <th className="pb-2 text-center font-medium">Bobot (%)</th>
-                                          <th className="pb-2 text-right font-medium">Nilai Tertimbang</th>
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-gray-100">
@@ -1033,9 +1117,7 @@ export default function LaporanPage() {
                                                 {cpmk.bobot}%
                                               </span>
                                             </td>
-                                            <td className="py-2 text-right font-semibold text-gray-900">
-                                              {cpmk.nilaiWeighted}
-                                            </td>
+                                            
                                           </tr>
                                         ))}
                                       </tbody>
@@ -1388,14 +1470,14 @@ export default function LaporanPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
                         <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cpl.avgNilai >= 75
+                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${cpl.avgNilai >= 70
                             ? 'bg-green-100 text-green-800'
-                            : cpl.avgNilai >= 60
+                            : cpl.avgNilai >= 50
                               ? 'bg-yellow-100 text-yellow-800'
                               : 'bg-red-100 text-red-800'
                             }`}
                         >
-                          {cpl.avgNilai >= 75 ? 'Tercapai' : cpl.avgNilai >= 60 ? 'Cukup' : 'Belum Tercapai'}
+                          {cpl.avgNilai >= 70 ? 'Tercapai' : cpl.avgNilai >= 50 ? 'Cukup' : 'Belum Tercapai'}
                         </span>
                       </td>
                     </tr>

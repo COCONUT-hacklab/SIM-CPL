@@ -197,3 +197,6 @@ export async function fetchNilaiCPLByMahasiswa(
   );
 }
 
+export async function fetchAngkatanList(idProdi: number, signal?: AbortSignal): Promise<number[]> {
+  return fetchJson<number[]>(apiUrl(`/prodi/${idProdi}/angkatan`), { method: 'GET', signal });
+}
