@@ -146,6 +146,9 @@ FROM (
     WHERE
         m.id_prodi = ?
         AND n.semester_tempuh = ?
+        AND (m.id_konsentrasi IS NULL OR m.id_konsentrasi = (
+            SELECT id_konsentrasi FROM mahasiswa WHERE id_mhs = n.id_mhs
+        ))
     GROUP BY
         n.id_mhs,
         cm.id_cpl

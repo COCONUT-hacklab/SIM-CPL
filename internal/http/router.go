@@ -1,8 +1,6 @@
 package http
 
 import (
-	"time"
-
 	"cpmk/internal/middleware" // Pastikan folder middleware sudah ada
 
 	"github.com/gin-contrib/cors"
@@ -14,12 +12,13 @@ func NewRouter() *gin.Engine {
 
 	// Konfigurasi CORS (Sesuai kode lama Anda)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "X-Requested-With", "Authorization", "ngrok-skip-browser-warning"},
+		// Gunakan wildcard "*" hanya untuk memastikan koneksi tembus saat testing
+		AllowAllOrigins: true,
+		AllowMethods:    []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		// "ngrok-skip-browser-warning" WAJIB ada di sini
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "ngrok-skip-browser-warning"},
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: false,
-		MaxAge:           12 * time.Hour,
+		AllowCredentials: true,
 	}))
 
 	// Endpoint Health Check (Bisa diakses siapa saja)
