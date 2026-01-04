@@ -18,7 +18,6 @@ export default function LoginPage() {
     // Static credentials
     const validUsers = [
       { username: 'admin', password: 'admin123', role: 'admin', name: 'Administrator' },
-      { username: 'dosen', password: 'dosen123', role: 'dosen', name: 'Dr. Ahmad' },
       { username: 'kaprodi', password: 'kaprodi123', role: 'kaprodi', name: 'Dr. Siti' },
     ];
 
@@ -106,8 +105,6 @@ export default function LoginPage() {
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <p className="text-xs font-semibold text-gray-700 mb-2">Demo Credentials:</p>
             <div className="text-xs text-gray-600 space-y-1">
-              <p>• Admin: admin / admin123</p>
-              <p>• Dosen: dosen / dosen123</p>
               <p>• Kaprodi: kaprodi / kaprodi123</p>
             </div>
           </div>

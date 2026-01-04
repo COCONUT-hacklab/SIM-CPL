@@ -487,7 +487,7 @@ const handleExport = async (format: 'pdf' | 'excel') => {
       'Kode CPL': item.kode || item.kode_cpl,
       'Deskripsi': item.deskripsi,
       'Nilai Angka': item.nilai_angka || item.avgNilai,
-      'Status': (item.nilai_angka || item.avgNilai) >= 75 ? 'Tercapai' : 'Kurang'
+      'Status': (item.nilai_angka || item.avgNilai) >= 70 ? 'Tercapai' : 'Kurang'
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);

@@ -105,7 +105,8 @@ export async function fetchMKByProdiSemester(
   const q = semester ? `?semester=${encodeURIComponent(String(semester))}` : '';
   return fetchJson<MK[]>(
     apiUrl(`/prodi/${encodeURIComponent(String(idProdi))}/mk${q}`),
-    { method: 'GET', signal },
+    { method: 'GET',
+      signal },
   );
 }
 
