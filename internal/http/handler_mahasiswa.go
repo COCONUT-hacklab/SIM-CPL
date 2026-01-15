@@ -92,3 +92,53 @@ func listAngkatanHandler(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, angkatans)
 }
+
+// GET /api/mahasiswa/:nim/mk/:id_mk/analisis
+func getMKAnalisisMahasiswaHandler(c *gin.Context) {
+    ctx := c.Request.Context()
+    nim := c.Param("nim")
+    idMK, _ := strconv.ParseUint(c.Param("id_mk"), 10, 64)
+
+    // 1. Ambil data mahasiswa berdasarkan NIM
+    var mhs model.Mahasiswa
+    if err := db.DB.WithContext(ctx).Where("nim = ?", nim).First(&mhs).Error; err != nil {
+        c.JSON(http.StatusNotFound, gin.H{"error": "mahasiswa tidak ditemukan"})
+        return
+    }
+
+    // 2. Query Gabungan: Ambil CPMK, Nilai Mahasiswa, dan Sub-CPMK terkait
+    type SubCPMKRes struct {
+        Kode      string  `json:"kode_sub_cpmk"`
+        Deskripsi string  `json:"deskripsi"`
+        Nilai     float64 `json:"nilai"`
+    }
+    
+    type CPMKAnalisisRes struct {
+        IDCPMK    uint64       `json:"id_cpmk"`
+        KodeCPMK  string       `json:"kode_cpmk"`
+        Nilai     float64      `json:"nilai"`
+        Bobot     float64      `json:"bobot_cpmk"`
+        Deskripsi string       `json:"deskripsi"`
+        SubCPMKs  []SubCPMKRes `json:"sub_cpmks"`
+    }
+
+    var results []CPMKAnalisisRes
+    db.DB.WithContext(ctx).Table("cpmk").
+        Select("cpmk.id_cpmk, cpmk.kode_cpmk, cpmk.deskripsi, cpmk.bobot_cpmk, COALESCE(nilai_cpmk.nilai, 0) as nilai").
+        Joins("LEFT JOIN nilai_cpmk ON nilai_cpmk.id_cpmk = cpmk.id_cpmk AND nilai_cpmk.id_mhs = ?", mhs.IDMhs).
+        Where("cpmk.id_mk = ?", idMK).
+        Scan(&results)
+
+    // 3. Ambil rincian Sub-CPMK untuk setiap CPMK
+    for i := range results {
+        var subs []SubCPMKRes
+        db.DB.WithContext(ctx).Table("sub_cpmk").
+            Select("sub_cpmk.kode_sub_cpmk, sub_cpmk.deskripsi, COALESCE(nilai_sub_cpmk.nilai, 0) as nilai").
+            Joins("LEFT JOIN nilai_sub_cpmk ON nilai_sub_cpmk.id_sub_cpmk = sub_cpmk.id_sub_cpmk AND nilai_sub_cpmk.id_mhs = ?", mhs.IDMhs).
+            Where("sub_cpmk.id_cpmk = ?", results[i].IDCPMK).
+            Scan(&subs)
+        results[i].SubCPMKs = subs
+    }
+
+    c.JSON(http.StatusOK, results)
+}

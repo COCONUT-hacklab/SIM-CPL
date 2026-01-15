@@ -393,12 +393,13 @@ func recalcBobotHandler(c *gin.Context) {
 // ========================= CPL MAPPING (CPL -> MK -> CPMK) =========================
 
 type MKMappingItem struct {
-	IDMK      uint64 `json:"id_mk"`
-	KodeMK    string `json:"kode_mk"`
-	NamaMK    string `json:"nama_mk"`
-	SKS       uint8  `json:"sks"`
-	Semester  uint8  `json:"semester"`
-	CPMKCount int    `json:"cpmk_count"`
+	IDMK         uint64   `json:"id_mk"`
+	KodeMK       string   `json:"kode_mk"`
+	NamaMK       string   `json:"nama_mk"`
+	SKS          uint8    `json:"sks"`
+	Semester     uint8    `json:"semester"`
+	CPMKCount    int      `json:"cpmk_count"`
+	RelatedCPMKs []string `json:"related_cpmks"`
 }
 
 type CPLMappingItem struct {
@@ -514,6 +515,17 @@ func getCPLMappingHandler(c *gin.Context) {
 				// MK not in current semester filter
 				continue
 			}
+
+			var relatedCPMKs []string
+			db.DB.WithContext(ctx).
+				Table("cpmk").
+				Where("id_mk = ? AND id_cpl = ?", mk.IDMK, cpl.IDCPL). // Sesuaikan nama kolom di DB Anda
+				Pluck("kode_cpmk", &relatedCPMKs)
+
+			if relatedCPMKs == nil {
+				relatedCPMKs = []string{}
+			}
+
 			item.MKList = append(item.MKList, MKMappingItem{
 				IDMK:      mk.IDMK,
 				KodeMK:    mk.KodeMK,
@@ -521,6 +533,7 @@ func getCPLMappingHandler(c *gin.Context) {
 				SKS:       mk.SKS,
 				Semester:  mk.Semester,
 				CPMKCount: cpmkCountMap[mk.IDMK],
+				RelatedCPMKs: relatedCPMKs,
 			})
 		}
 

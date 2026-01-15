@@ -49,6 +49,7 @@ func NewRouter() *gin.Engine {
 		api.GET("/prodi/:id_prodi/mahasiswa-nilai", listMahasiswaDenganNilaiHandler)
 		api.GET("/mahasiswa/:nim/cpl", getCPLByMahasiswaHandler)
 		api.GET("/mahasiswa/:nim/nilai-mk", getNilaiMKByMahasiswaHandler)
+		api.GET("/mahasiswa/:nim/mk/:id_mk/analisis", getMKAnalisisMahasiswaHandler)
 
 		// ==============================
 		// 2. PROTECTED ROUTES (Wajib Token/Login)
