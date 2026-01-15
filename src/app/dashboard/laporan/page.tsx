@@ -745,232 +745,204 @@ else if (format === 'pdf') {
 
           {/* Content based on tab selection */}
           {mahasiswaViewTab === 'keseluruhan' ? (
-            <div className="space-y-6">
-              {/* CPL Trend Chart */}
-              {laporanData.trendData && laporanData.trendData.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                    📈 Tren Capaian CPL Lintas Semester
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Grafik perkembangan rata-rata CPL dari semester 1 hingga semester aktif
-                  </p>
-                  <ResponsiveContainer width="100%" height={350}>
-                    <LineChart data={laporanData.trendData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="semester" stroke="#6b7280" />
-                      <YAxis domain={[0, 100]} stroke="#6b7280" />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#fff',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                        }}
-                      />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="Rata-rata CPL"
-                        stroke="#2563eb"
-                        strokeWidth={3}
-                        dot={{ fill: '#2563eb', r: 6 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+          <div className="space-y-6">
+    {/* 1. TREN PERKEMBANGAN CPL */}
+    <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h3 className="text-lg font-bold text-gray-800">📈 Tren Capaian CPL Lintas Semester</h3>
+          <p className="text-xs text-gray-500">Grafik perkembangan rata-rata seluruh CPL dari semester 1 s/d aktif</p>
+        </div>
+        <div className="px-4 py-2 bg-blue-50 rounded-lg border border-blue-100">
+          <span className="text-xs text-blue-600 font-bold">Status: {laporanData.avgCPL >= 70 ? 'Stabil' : 'Perlu Pendampingan'}</span>
+        </div>
+      </div>
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={laporanData.trendData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+            <XAxis dataKey="semester" fontSize={11} tick={{fill: '#64748b'}} />
+            <YAxis domain={[0, 100]} fontSize={11} tick={{fill: '#64748b'}} />
+            <Tooltip 
+              contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="Rata-rata CPL" 
+              stroke="#2563eb" 
+              strokeWidth={3} 
+              dot={{ fill: '#2563eb', r: 5, strokeWidth: 2, stroke: '#fff' }}
+              activeDot={{ r: 8 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
 
-              {/* Overall CPL Achievement - New Chart */}
-              {laporanData.cplOverallData && laporanData.cplOverallData.length > 0 && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                      Capaian CPL Keseluruhan (Semua Semester)
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      Visualisasi pencapaian rata-rata untuk setiap CPL dari seluruh semester yang telah diselesaikan
-                    </p>
-                  </div>
+    {/* 2. ANALISIS PROFIL LULUSAN (RADAR & BAR) */}
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Radar Chart */}
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200 flex flex-col items-center">
+        <h4 className="text-sm font-bold text-gray-700 mb-6 self-start">Visualisasi Profil Kompetensi</h4>
+        <div className="h-[320px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart data={laporanData.radarData}>
+              <PolarGrid stroke="#e2e8f0" />
+              <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 11, fontWeight: 'bold' }} />
+              <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar name="Skor CPL" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.5} />
+              <Tooltip />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-                  <div className="p-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Radar Chart */}
-                      <div className="flex flex-col">
-                        <h4 className="text-md font-semibold text-gray-700 mb-4 text-center">
-                          Radar Chart - Profil CPL
-                        </h4>
-                        <ResponsiveContainer width="100%" height={400}>
-                          <RadarChart data={laporanData.radarData}>
-                            <PolarGrid stroke="#e5e7eb" />
-                            <PolarAngleAxis
-                              dataKey="subject"
-                              stroke="#6b7280"
-                              tick={{ fill: '#374151', fontSize: 12 }}
-                            />
-                            <PolarRadiusAxis
-                              domain={[0, 100]}
-                              stroke="#6b7280"
-                              tick={{ fill: '#6b7280', fontSize: 10 }}
-                            />
-                            <Radar
-                              name="Nilai CPL"
-                              dataKey="value"
-                              stroke="#2563eb"
-                              fill="#2563eb"
-                              fillOpacity={0.6}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: '#fff',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                              }}
-                            />
-                            <Legend />
-                          </RadarChart>
-                        </ResponsiveContainer>
-                      </div>
-
-                      {/* Bar Chart */}
-                      <div className="flex flex-col">
-                        <h4 className="text-md font-semibold text-gray-700 mb-4 text-center">
-                          Bar Chart - Perbandingan CPL
-                        </h4>
-                        <ResponsiveContainer width="100%" height={400}>
-                          <BarChart data={laporanData.cplOverallData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                            <XAxis
-                              dataKey="kode"
-                              stroke="#6b7280"
-                              tick={{ fill: '#374151', fontSize: 11 }}
-                            />
-                            <YAxis
-                              domain={[0, 100]}
-                              stroke="#6b7280"
-                              tick={{ fill: '#6b7280' }}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: '#fff',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
-                              }}
-                              formatter={(value: any) => [`${value}`, 'Nilai']}
-                            />
-                            <Legend />
-                            <Bar
-                              dataKey="avgNilai"
-                              fill="#2563eb"
-                              radius={[8, 8, 0, 0]}
-                              name="Rata-rata Nilai"
-                            />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                    {/* CPL Details Table */}
-                    <div className="mt-6">
-                      <h4 className="text-md font-semibold text-gray-700 mb-3">
-                        Detail Capaian Per CPL
-                      </h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
-                          <thead className="bg-gradient-to-r from-blue-100 to-blue-200">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Kode CPL</th>
-                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Deskripsi</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Rata-rata Nilai</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Semester Terkait</th>
-                              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {laporanData.cplOverallData.map((cpl: any, idx: number) => (
-                              <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-4 py-3 whitespace-nowrap">
-                                  <span className="font-semibold text-blue-600">{cpl.kode}</span>
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-700">
-                                  {cpl.deskripsi}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-blue-100 text-blue-800">
-                                    {cpl.avgNilai}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    {cpl.jumlahSemester} semester
-                                  </span>
-                                </td>
-                                <td className="px-5 py-3 text-center">
-                                  <span
-                                    className={`inline-flex items-center px-4 py-1 rounded-full text-xs font-semibold ${cpl.avgNilai >= 70
-                                      ? 'bg-green-100 text-green-800'
-                                      : cpl.avgNilai >= 50
-                                        ? 'bg-yellow-100 text-yellow-800'
-                                        : 'bg-red-100 text-red-800'
-                                      }`}
-                                  >
-                                    {cpl.avgNilai >= 70 ? '✓ Tercapai' : cpl.avgNilai >= 50 ? '~ Cukup' : '✗ Belum Tercapai'}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {/* CPL Category Summary Cards */}
-                      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-1 rounded">CPL Tercapai (70-100)</span>
-                          </div>
-                          <p className="text-3xl font-bold text-green-600">
-                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai >= 70).length}
-                          </p>
-                        </div>
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-yellow-600 bg-yellow-100 px-2 py-1 rounded">CPL Cukup (50-69)</span>
-                          </div>
-                          <p className="text-3xl font-bold text-yellow-600">
-                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai >= 50 && c.avgNilai <= 69).length}
-                          </p>
-                        </div>
-                        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-1 rounded">CPL Belum Tercapai (0-49)</span>
-                          </div>
-                          <p className="text-3xl font-bold text-red-600">
-                            {(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai <= 49).length}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* CPL Calculation Info Box */}
-                      <div className="mt-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-                        <div className="flex items-start space-x-2">
-                          <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <div className="text-sm text-gray-700">
-                            <p className="font-semibold mb-2">Cara Perhitungan CPL Keseluruhan:</p>
-                            <ul className="list-disc list-inside space-y-1 text-xs">
-                              <li><strong>Agregasi multi-semester:</strong> Setiap CPL dihitung dari rata-rata nilai di <strong>seluruh semester</strong> yang telah diselesaikan mahasiswa</li>
-                              <li><strong>Contoh:</strong> Jika CPL1 muncul di semester 1, 3, dan 5 dengan nilai 80, 85, 90 → Rata-rata CPL1 = (80+85+90)/3 = 85</li>
-                              <li>Kolom <strong>"Semester Terkait"</strong> menunjukkan berapa semester yang memiliki mata kuliah terkait CPL tersebut</li>
-                              <li>CPL dengan nilai 0 berarti belum ada mata kuliah yang berkontribusi ke CPL tersebut di semester yang sudah diselesaikan</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+      {/* Ringkasan Kekuatan & Kelemahan */}
+      <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+        <h4 className="text-sm font-bold text-gray-700 mb-4">Analisis Capaian CPL</h4>
+        <div className="space-y-4">
+          {/* CPL Tertinggi */}
+          <div className="p-4 bg-green-50 rounded-xl border border-green-100">
+            <div className="flex items-center text-green-700 mb-2">
+              <span className="mr-2">🏆</span>
+              <span className="text-xs font-bold uppercase">Kompetensi Terkuat</span>
             </div>
+            {laporanData.cplOverallData && laporanData.cplOverallData.length > 0 ? (
+              <div>
+                <p className="text-lg font-bold text-green-800">
+                  {laporanData.cplOverallData.sort((a: any, b: any) => b.avgNilai - a.avgNilai)[0].kode}
+                </p>
+                <p className="text-[11px] text-green-600">Mahasiswa sangat unggul pada aspek ini dengan nilai rata-rata {laporanData.cplOverallData[0].avgNilai}</p>
+              </div>
+            ) : <p className="text-xs text-gray-400">Data tidak tersedia</p>}
+          </div>
+
+          {/* CPL Terendah */}
+          {/* CPL Terendah (DETAIL HAMBATAN) */}
+      <div className="p-5 bg-red-50 rounded-xl border border-red-100">
+        <div className="flex items-center text-red-700 mb-3">
+          <span className="mr-2 text-lg">⚠️</span>
+          <span className="text-xs font-bold uppercase tracking-wider">Hambatan Utama Terdeteksi</span>
+        </div>
+        
+        {laporanData.cplOverallData && laporanData.cplOverallData.length > 0 ? (
+          (() => {
+            const lowestCPL = [...laporanData.cplOverallData].sort((a, b) => a.avgNilai - b.avgNilai)[0];
+            
+            // Mencari MK/CPMK penghambat dari data breakdown semester ini 
+            // yang terhubung dengan CPL terendah tersebut
+            const inhibitors = (laporanData.cpmkBreakdown || [])
+              .filter((b: any) => b.cplKode === lowestCPL.kode)
+              .flatMap((b: any) => b.mataKuliah)
+              .filter((mk: any) => mk.nilaiMK < 60); // Ambang batas hambatan (nilai < 60)
+
+            return (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xl font-black text-red-800">{lowestCPL.kode}</p>
+                  <p className="text-[11px] text-red-600 font-medium leading-relaxed">
+                    {lowestCPL.deskripsi}
+                  </p>
+                </div>
+
+                {/* List Faktor Penghambat Spesifik */}
+                <div className="mt-4 pt-3 border-t border-red-200/50">
+                  <p className="text-[10px] font-bold text-red-700 uppercase mb-2">Faktor Penghambat Spesifik:</p>
+                  
+                  {inhibitors.length > 0 ? (
+                    <div className="space-y-2">
+                      {inhibitors.map((mk: any, i: number) => (
+                        <div key={i} className="bg-white/60 p-2.5 rounded-lg border border-red-100">
+                          <div className="flex justify-between items-start mb-1">
+                            <span className="text-[10px] font-bold text-gray-800">{mk.mkKode} - {mk.mkNama}</span>
+                            <span className="text-[10px] font-black text-red-600">{mk.nilaiMK}</span>
+                          </div>
+                          <p className="text-[9px] text-gray-500 leading-tight">
+                            Rendahnya pencapaian pada MK ini secara signifikan menarik turun rata-rata {lowestCPL.kode}.
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] italic text-red-500">
+                      Hambatan terakumulasi dari nilai rata-rata yang belum mencapai target di beberapa semester sebelumnya.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-2 flex items-center gap-2 text-[9px] bg-red-100/50 p-2 rounded text-red-700 italic">
+                  <span>💡</span>
+                  <span>Rekomendasi: Perlu penguatan pada materi dasar yang mendukung CPL ini.</span>
+                </div>
+              </div>
+            );
+          })()
+        ) : (
+          <p className="text-xs text-gray-400">Data analisis belum tersedia.</p>
+        )}
+      </div>
+    </div>
+
+        {/* CPL Category Summary */}
+        <div className="mt-6 grid grid-cols-3 gap-2">
+          <div className="text-center p-2 bg-gray-50 rounded-lg">
+            <p className="text-[10px] text-gray-500 uppercase font-bold">Tercapai</p>
+            <p className="text-xl font-bold text-green-600">{(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai >= 70).length}</p>
+          </div>
+          <div className="text-center p-2 bg-gray-50 rounded-lg">
+            <p className="text-[10px] text-gray-500 uppercase font-bold">Cukup</p>
+            <p className="text-xl font-bold text-yellow-500">{(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai >= 50 && c.avgNilai < 70).length}</p>
+          </div>
+          <div className="text-center p-2 bg-gray-50 rounded-lg">
+            <p className="text-[10px] text-gray-500 uppercase font-bold">Kurang</p>
+            <p className="text-xl font-bold text-red-500">{(laporanData.cplOverallData || []).filter((c: any) => c.avgNilai < 50).length}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* 3. TABEL DETAIL CAPAIAN KESELURUHAN */}
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+        <h3 className="font-bold text-gray-800">Rincian Nilai CPL (Sem 1-8)</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-white border-b border-gray-200">
+            <tr>
+              <th className="px-6 py-4 font-bold text-gray-600 uppercase text-[10px]">Kode</th>
+              <th className="px-6 py-4 font-bold text-gray-600 uppercase text-[10px]">Deskripsi Capaian</th>
+              <th className="px-6 py-4 font-bold text-gray-600 uppercase text-[10px] text-center">Rata-rata</th>
+              <th className="px-6 py-4 font-bold text-gray-600 uppercase text-[10px] text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {sortedCPLData.map((cpl: any, idx: number) => (
+              <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
+<td className="px-6 py-4 font-bold text-blue-600">
+               {cpl.kode || cpl.kode_cpl || cpl.cplKode}
+            </td>               
+            <td className="px-6 py-4 text-gray-600 text-xs leading-relaxed">{cpl.deskripsi}</td>
+                <td className="px-6 py-4 text-center">
+<span className="font-bold text-gray-800">{cpl.avgNilai || cpl.nilai_angka}</span>                
+</td>
+                <td className="px-6 py-4 text-center">
+                  <span className={`px-4 py-1 rounded-full text-[10px] font-bold ${
+                    cpl.avgNilai >= 70 ? 'bg-green-100 text-green-700' :
+                    cpl.avgNilai >= 50 ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {cpl.avgNilai >= 70 ? 'Tercapai' : cpl.avgNilai >= 50 ? 'Cukup' : 'Belum Tercapai'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+      </tbody>
+    </table>
+      </div>  
+    </div>
+  </div>
+
           ) : (
             <div className="space-y-6">
               {/* Per Semester Content */}

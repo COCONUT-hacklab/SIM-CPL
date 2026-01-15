@@ -13,6 +13,12 @@ import {
   PolarRadiusAxis,
   Radar,
   Tooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Cell
 } from 'recharts';
 
 // ============================ API CONFIG ============================
@@ -58,6 +64,7 @@ type MappingNode = {
     nama: string;
     sks: number;
     cpmkCount: number;
+    relatedCpmks: string[];
   }[];
   totalCPMK: number;
 };
@@ -87,7 +94,8 @@ export default function DashboardPage() {
   const [expandedMKIds, setExpandedMKIds] = useState<number[]>([]);
   const [cpmkByMK, setCpmkByMK] = useState<Record<number, CPMKItem[]>>({});
   const [loadingCPMKFor, setLoadingCPMKFor] = useState<number | null>(null);
-
+  const [mhsCpmkScores, setMhsCpmkScores] = useState<Record<number, any[]>>({});
+  const [activeMKId, setActiveMKId] = useState<number | null>(null);
   // ============================ FETCH PRODI ============================
   useEffect(() => {
     async function loadProdi() {
@@ -174,7 +182,8 @@ export default function DashboardPage() {
             kode: m.kode_mk,
             nama: m.nama_mk,
             sks: m.sks,
-            cpmkCount: m.cpmk_count
+            cpmkCount: m.cpmk_count,
+            relatedCpmks: m.related_cpmks || [],
           })),
           totalCPMK: (b.mk_list || []).reduce((acc: number, m: any) => acc + m.cpmk_count, 0)
         }));
@@ -192,25 +201,37 @@ export default function DashboardPage() {
 
   // ============================ TOGGLE MK & FETCH CPMK ============================
   const toggleMKAccordion = async (idMK: number) => {
-    if (expandedMKIds.includes(idMK)) {
-      setExpandedMKIds(prev => prev.filter(id => id !== idMK));
-      return;
-    }
+  // Toggle accordion di timeline
+  if (expandedMKIds.includes(idMK)) {
+    setExpandedMKIds(prev => prev.filter(id => id !== idMK));
+    if (activeMKId === idMK) setActiveMKId(null);
+  } else {
     setExpandedMKIds(prev => [...prev, idMK]);
+    setActiveMKId(idMK); // Set sebagai MK aktif untuk diagram di kanan
+  }
 
-    if (!cpmkByMK[idMK]) {
-      setLoadingCPMKFor(idMK);
+  // Fetch data jika belum ada (logika fetch tetap sama seperti sebelumnya)
+  if (!cpmkByMK[idMK]) {
+    setLoadingCPMKFor(idMK);
+    try {
+      const res = await fetch(`${API_BASE}/mk/${idMK}/cpmk`);
+      const data = await res.json();
+      setCpmkByMK(prev => ({ ...prev, [idMK]: data }));
+    } catch (err) { console.error(err); } 
+    finally { setLoadingCPMKFor(null); }
+  }
+
+  if (selectedMahasiswa && !mhsCpmkScores[idMK]) {
+    const mhs = filteredMahasiswa.find(m => m.id === selectedMahasiswa);
+    if (mhs) {
       try {
-        const res = await fetch(`${API_BASE}/mk/${idMK}/cpmk`);
+        const res = await fetch(`${API_BASE}/mahasiswa/${mhs.npm}/mk/${idMK}/analisis`);
         const data = await res.json();
-        setCpmkByMK(prev => ({ ...prev, [idMK]: data }));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingCPMKFor(null);
-      }
+        setMhsCpmkScores(prev => ({ ...prev, [idMK]: data }));
+      } catch (err) { console.error(err); }
     }
-  };
+  }
+};
 
   // ============================ DERIVED DATA ============================
   const selectedMhs = filteredMahasiswa.find(m => m.id === selectedMahasiswa);
@@ -307,7 +328,7 @@ export default function DashboardPage() {
           </div>
           <p className="text-sm text-gray-500 mb-6">Semester {selectedSemester} • {prodiInfo?.nama_prodi}</p>
 
-          <div className="space-y-6 overflow-y-auto max-h-[600px] pr-2">
+          <div className="space-y-6 overflow-y-auto max-h-[910px] pr-2">
             {mappingData.map((item) => {
               const isMissingData = item.mkCount === 0;
               return (
@@ -345,17 +366,53 @@ export default function DashboardPage() {
                             </div>
                             {mk.cpmkCount > 0 && <span className={`text-[10px] transition-transform ${expandedMKIds.includes(mk.id_mk) ? 'rotate-180' : ''}`}>▼</span>}
                           </div>
-                          {expandedMKIds.includes(mk.id_mk) && (
-                            <div className="mt-4 pt-4 border-t border-emerald-200/50 space-y-3">
-                              {loadingCPMKFor === mk.id_mk ? <p className="text-[10px] italic">Loading...</p> :
-                               (cpmkByMK[mk.id_mk] || []).map((cpmk) => (
-                                <div key={cpmk.id_cpmk} className="bg-white p-3 rounded-lg border border-emerald-100 shadow-sm">
-                                  <p className="text-[10px] font-bold text-emerald-700 mb-1">{cpmk.kode_cpmk}</p>
-                                  <p className="text-[11px] text-gray-600 leading-normal">{cpmk.deskripsi}</p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                        {expandedMKIds.includes(mk.id_mk) && (
+  <div className="mt-4 space-y-4">
+    {/* DIAGRAM ANALISIS */}
+    
+
+    {/* LIST CPMK DENGAN SUB-CPMK */}
+    <div className="space-y-3">
+      {(cpmkByMK[mk.id_mk] || []).map((cpmk) => {
+        const isRelated = mk.relatedCpmks?.includes(cpmk.kode_cpmk);
+const scoreData = (mhsCpmkScores[mk.id_mk] || []).find(s => s.id_cpmk === cpmk.id_cpmk);
+  const score = scoreData?.nilai || 0;
+        return (
+          <div key={cpmk.id_cpmk} className={`p-3 rounded-lg border ${isRelated ? 'bg-white' : 'bg-gray-50 opacity-50'}`}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] font-bold">{cpmk.kode_cpmk}</span>
+              {isRelated && <span className={`text-[10px] font-bold ${score >= 70 ? 'text-green-600' : 'text-amber-600'}`}>Skor: {score}</span>}
+            </div>
+            
+            {isRelated ? (
+        <div className="space-y-2">
+          <p className="text-[11px] text-gray-600 leading-normal">{cpmk.deskripsi}</p>
+          
+          {/* SEKARANG scoreData SUDAH DEFINED DAN BISA DIGUNAKAN */}
+          <div className="pl-4 border-l-2 border-emerald-100 space-y-1.5 mt-2">
+            <p className="text-[9px] font-bold text-emerald-600/70 uppercase tracking-wider">Sub-CPMK & Indikator:</p>
+            
+            {scoreData?.sub_cpmks && scoreData.sub_cpmks.length > 0 ? (
+              scoreData.sub_cpmks.map((sub: any, sIdx: number) => (
+                <div key={sIdx} className="flex justify-between items-center bg-emerald-50/50 p-2 rounded text-[10px] text-gray-600">
+                  <span className="flex-1 mr-4">{sub.kode_sub_cpmk}. {sub.deskripsi}</span>
+                  <span className="font-bold text-emerald-700">{sub.nilai}</span>
+                </div>
+              ))
+            ) : (
+              <div className="text-[10px] text-gray-400 italic">Belum ada data indikator.</div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="h-2" />
+      )}
+    </div>
+  );
+})}
+    </div>
+  </div>
+)}
                         </div>
                       </div>
                     ))}
@@ -367,18 +424,81 @@ export default function DashboardPage() {
         </div>
 
         {/* 4. RADAR CHART */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
-          <h3 className="text-lg font-bold text-gray-800 self-start mb-6">Profil Visualisasi CPL</h3>
-          <ResponsiveContainer width="100%" height={400}>
-            <RadarChart data={radarData}>
-              <PolarGrid stroke="#e2e8f0" />
-              <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12 }} />
-              <PolarRadiusAxis domain={[0, 100]} axisLine={false} tick={false} />
-              <Radar name="Skor CPL" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.5} />
-              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-            </RadarChart>
+        {/* BAGIAN KANAN: RADAR CHART + ANALISIS CPMK */}
+<div className="space-y-6">
+  {/* A. Profil Visualisasi CPL (Radar Chart - Ukuran Dikurangi) */}
+  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+    <h3 className="text-lg font-bold text-gray-800 self-start mb-4">Profil Visualisasi CPL</h3>
+    <div className="h-[280px] w-full"> {/* Height dikurangi dari 400 ke 280 */}
+      <ResponsiveContainer width="100%" height="100%">
+        <RadarChart data={radarData}>
+          <PolarGrid stroke="#e2e8f0" />
+          <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10 }} />
+          <PolarRadiusAxis domain={[0, 100]} axisLine={false} tick={false} />
+          <Radar name="Skor CPL" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.5} />
+          <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+        </RadarChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+
+  {/* B. Diagram Analisis CPMK & Sub-CPMK (Bar Chart Terpisah) */}
+  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div className="flex justify-between items-center mb-6">
+      <h3 className="text-lg font-bold text-gray-800">Analisis CPMK Mahasiswa</h3>
+      {activeMKId && (
+        <span className="text-[10px] bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
+          MK: {mappingData.flatMap(m => m.mataKuliah).find(mk => mk.id_mk === activeMKId)?.kode}
+        </span>
+      )}
+    </div>
+
+    {activeMKId ? (
+      <div className="space-y-6">
+        {/* Bar Chart Nilai CPMK */}
+        <div className="h-[220px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={mhsCpmkScores[activeMKId] || []}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="kode_cpmk" fontSize={10} tick={{fill: '#475569'}} />
+              <YAxis domain={[0, 100]} fontSize={10} />
+              <Tooltip cursor={{fill: 'rgba(59, 130, 246, 0.05)'}} />
+              <Bar dataKey="nilai" name="Nilai" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+            </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {/* List Detail Sub-CPMK */}
+        <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+          
+          {(mhsCpmkScores[activeMKId] || []).map((scoreData, idx) => (
+            
+            <div key={idx} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-gray-700">{scoreData.kode_cpmk}</span>
+                <span className="text-xs font-bold text-blue-600">{scoreData.nilai}</span>
+              </div>
+              <p className="text-[9px] font-bold text-emerald-600/70 uppercase tracking-wider">Sub-CPMK & Indikator:</p>
+              <div className="space-y-2">
+                {scoreData.sub_cpmks?.map((sub: any, sIdx: number) => (
+                  <div key={sIdx} className="flex justify-between bg-white p-2 rounded-lg text-[10px] border border-gray-100">
+                    <span className="text-gray-500">{sub.kode_sub_cpmk}. {sub.deskripsi}</span>
+                    <span className="font-bold text-gray-700 ml-2">{sub.nilai}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <div className="h-[530px] flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-100 rounded-xl">
+        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4 text-2xl">🖱️</div>
+        <p className="text-gray-400 text-sm font-medium">Klik salah satu Mata Kuliah di timeline untuk melihat analisis CPMK mahasiswa</p>
+      </div>
+    )}
+  </div>
+</div>
       </div>
 
       {/* 5. DETAIL TABLE - RED ROWS IF MISSING */}
