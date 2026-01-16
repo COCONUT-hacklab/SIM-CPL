@@ -3,6 +3,7 @@ package http
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"cpmk/internal/db"
 	"cpmk/internal/model"
@@ -102,8 +103,8 @@ func listMKByProdiSemesterHandler(c *gin.Context) {
 		IDProdi    uint64   `json:"id_prodi"` // Prodi local ID (jika ada)
 		KodeMK     string   `json:"kode_mk"`
 		NamaMK     string   `json:"nama_mk"`
-		SKS        int      `json:"sks"`
-		Semester   int      `json:"semester"`
+		SKS        uint8    `json:"sks"`
+		Semester   uint8    `json:"semester"`
 		CPLTerkait []string `json:"cpl_terkait"`
 	}
 
@@ -401,8 +402,8 @@ type MKMappingItem struct {
 	IDMK      string `json:"id_mk"` // UBAH KE STRING (UUID)
 	KodeMK    string `json:"kode_mk"`
 	NamaMK    string `json:"nama_mk"`
-	SKS       int    `json:"sks"`
-	Semester  int    `json:"semester"`
+	SKS       uint8  `json:"sks"`
+	Semester  uint8  `json:"semester"`
 	CPMKCount int    `json:"cpmk_count"`
 	Relasi    string `json:"relasi"` // "direct" (via cpmk)
 }
@@ -417,94 +418,72 @@ type CPLMappingItem struct {
 // GET /api/prodi/:id_prodi/cpl-mapping?semester=1
 // Returns CPL list with linked MK (filtered by semester) and CPMK count per MK
 // GET /api/cpl/mapping?semester=...
+// GET /api/cpl/mapping?semester=...
+// GET /api/prodi/:id_prodi/cpl-mapping?semester=1
+// GET /api/prodi/:id_prodi/cpl-mapping
 func listCPLMappingHandler(c *gin.Context) {
 	ctx := c.Request.Context()
+	idProdiStr := c.Param("id_prodi")
 	semesterStr := c.Query("semester")
 
-	// 1. Get All CPL
+	// 1. Get CPL
 	var cpls []model.CPL
-	if err := db.DB.WithContext(ctx).Find(&cpls).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpl"})
+	if err := db.DB.WithContext(ctx).Where("id_prodi = ?", idProdiStr).Order("kode_cpl").Find(&cpls).Error; err != nil {
+		c.JSON(500, gin.H{"error": "db error cpl"})
 		return
 	}
 
-	// 2. Get All MK (Filter semester if needed)
-	mkQuery := db.DB.WithContext(ctx).Model(&model.MataKuliah{})
+	// 2. Get MK
+	mkQuery := db.DB.WithContext(ctx).Model(&model.MataKuliah{}).Where("id_prodi = ?", idProdiStr)
 	if semesterStr != "" {
 		mkQuery = mkQuery.Where("semester = ?", semesterStr)
 	}
-
 	var mks []model.MataKuliah
-	if err := db.DB.WithContext(ctx).Find(&mks).Error; err != nil { // Tanpa filter semester dulu jika ingin load semua lalu filter di memori, tapi query lebih efisien
-		// Di sini saya asumsikan query mks di atas sudah benar
-	}
-	// Note: Logic query di atas agak terputus di snippet asli, saya rapikan:
 	if err := mkQuery.Find(&mks).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error mk"})
+		c.JSON(500, gin.H{"error": "db error mk"})
 		return
 	}
 
-	// Map MK ID -> MK Struct (UBAH KEY JADI STRING)
 	mkMap := make(map[string]model.MataKuliah)
-	mkIDs := make([]string, 0, len(mks)) // UBAH JADI STRING SLICE
+	mkIDs := make([]string, 0)
 	for _, m := range mks {
 		mkMap[m.ID] = m
 		mkIDs = append(mkIDs, m.ID)
 	}
 
-	// 3. Find Relation CPL -> MK via Table CPMK
-	// Query: SELECT distinct id_cpl, id_mk FROM cpmk WHERE id_mk IN (...) AND id_cpl IS NOT NULL
-	// Karena id_mk sekarang string, query IN (?) tetap aman di GORM
-	rows, err := db.DB.Table("cpmk").
-		Select("distinct id_cpl, id_mk").
-		Where("id_cpl IS NOT NULL").
-		Rows()
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error mapping"})
-		return
-	}
-	defer rows.Close()
-
-	// Map CPL ID -> List of MK IDs (UBAH VALUE JADI STRING SLICE)
+	// 3. Mapping Relation (CPL -> MK)
 	cplToMKs := make(map[uint64][]string)
-
-	for rows.Next() {
-		var idCPL uint64
-		var idMK string // UBAH JADI STRING AGAR BISA DISCAN DARI UUID
-		if err := rows.Scan(&idCPL, &idMK); err == nil {
+	if len(cpls) > 0 {
+		rows, _ := db.DB.Table("cpl_mk").Select("distinct id_cpl, id_mk").Where("id_cpl IN (SELECT id_cpl FROM cpl WHERE id_prodi = ?)", idProdiStr).Rows()
+		defer rows.Close()
+		for rows.Next() {
+			var idCPL uint64
+			var idMK string
+			rows.Scan(&idCPL, &idMK)
 			cplToMKs[idCPL] = append(cplToMKs[idCPL], idMK)
 		}
 	}
 
-	// 4. Count CPMK per MK
-	// Kita butuh tahu ada berapa CPMK di setiap MK
-	type CountRes struct {
-		IDMK  string `gorm:"column:id_mk"` // UBAH JADI STRING
-		Count int
+	// 4. Get CPMK Details (Untuk ditampilkan di frontend)
+	type CPMKInfo struct {
+		IDMK       string
+		KodeCPMK   string
+		Deskripsi  string
+		MatchedCPL string
 	}
-	var cpmkCounts []CountRes
-
+	var cpmkRaw []CPMKInfo
 	if len(mkIDs) > 0 {
-		if err := db.DB.WithContext(ctx).
-			Model(&model.CPMK{}).
-			Select("id_mk, COUNT(*) as cnt").
-			Where("id_mk IN ?", mkIDs).
-			Group("id_mk").
-			Scan(&cpmkCounts).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "db error cpmk count"})
-			return
-		}
+		db.DB.Table("cpmk").Select("id_mk, kode_cpmk, deskripsi, matched_cpl").Where("id_mk IN ?", mkIDs).Scan(&cpmkRaw)
 	}
 
-	// Map Count (UBAH KEY JADI STRING)
-	cpmkCountMap := make(map[string]int)
-	for _, cc := range cpmkCounts {
-		cpmkCountMap[cc.IDMK] = cc.Count
+	// Group CPMK by MK
+	mkToCPMKs := make(map[string][]CPMKInfo)
+	for _, cc := range cpmkRaw {
+		mkToCPMKs[cc.IDMK] = append(mkToCPMKs[cc.IDMK], cc)
 	}
 
-	// 5. Build response
-	result := make([]CPLMappingItem, 0, len(cpls))
+	// 5. Build Response
+	result := make([]CPLMappingItem, 0)
 	for _, cpl := range cpls {
 		item := CPLMappingItem{
 			IDCPL:     cpl.IDCPL,
@@ -513,25 +492,39 @@ func listCPLMappingHandler(c *gin.Context) {
 			MKList:    []MKMappingItem{},
 		}
 
-		// Get MK IDs linked to this CPL
+		// Cari MK yang terhubung
 		mkIDsForCPL := cplToMKs[cpl.IDCPL]
 		for _, mkID := range mkIDsForCPL {
-			mk, exists := mkMap[mkID] // mkID string, map string -> Aman
+			mk, exists := mkMap[mkID]
 			if !exists {
 				continue
 			}
 
-			// (Opsional) Ambil detail kode CPMK jika perlu,
-			// tapi di snippet Anda ini hanya listing MK saja.
+			// Filter CPMK yang relevan dengan CPL ini
+			var relevantCPMKs []string
+			rawList := mkToCPMKs[mkID]
+			for _, r := range rawList {
+				// Cek apakah kode CPL ada di string MatchedCPL (misal "CPL-01, CPL-02")
+				// Bersihkan string agar match (CPL-01 vs CPL01)
+				cleanRaw := strings.ReplaceAll(r.MatchedCPL, "-", "")
+				cleanCPL := strings.ReplaceAll(cpl.KodeCPL, "-", "")
+
+				if strings.Contains(r.MatchedCPL, cpl.KodeCPL) || strings.Contains(cleanRaw, cleanCPL) {
+					relevantCPMKs = append(relevantCPMKs, r.KodeCPMK) // Atau r.Deskripsi jika mau
+				}
+			}
+
+			// Join CPMK codes untuk ditampilkan
+			cpmkDisplay := strings.Join(relevantCPMKs, ", ")
 
 			mkItem := MKMappingItem{
-				IDMK:      mk.ID, // Sudah string
+				IDMK:      mk.ID,
 				KodeMK:    mk.KodeMK,
 				NamaMK:    mk.NamaMK,
 				SKS:       mk.SKS,
 				Semester:  mk.Semester,
-				CPMKCount: cpmkCountMap[mk.ID], // Key string -> Aman
-				Relasi:    "direct",
+				CPMKCount: len(relevantCPMKs), // Jumlah CPMK terkait
+				Relasi:    cpmkDisplay,        // <--- KIRIM LIST CPMK DISINI (Frontend pakai field Relasi/custom)
 			}
 			item.MKList = append(item.MKList, mkItem)
 		}

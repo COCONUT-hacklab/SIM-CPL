@@ -44,7 +44,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 		// STATISTIK CPL
 		api.GET("/prodi/:id_prodi/cpl-stats", getCPLStatsByProdiSemesterHandler)
-		api.GET("/prodi/:id_prodi/cpl-mapping", getCPLMappingHandler)
+		api.GET("/prodi/:id_prodi/cpl-mapping", listCPLMappingHandler)
 
 		// IMPORT & ADMIN (Tadi error karena duplikat, sekarang aman)
 		api.POST("/nilai-mk/import", importNilaiHandler)
@@ -72,7 +72,7 @@ func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 			// STATISTIK CPL
 			protected.GET("/prodi/:id_prodi/cpl-stats", getCPLStatsByProdiSemesterHandler)
-			protected.GET("/prodi/:id_prodi/cpl-mapping", getCPLMappingHandler)
+			protected.GET("/prodi/:id_prodi/cpl-mapping", listCPLMappingHandler)
 
 			// IMPORT & ADMIN (Tadi error karena duplikat, sekarang aman)
 			protected.POST("/nilai-mk/import", importNilaiHandler)

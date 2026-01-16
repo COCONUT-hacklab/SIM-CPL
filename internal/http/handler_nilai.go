@@ -127,7 +127,7 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 		sem = uint8(tmp)
 	}
 
-	// ambil mahasiswa by NIM (using Find to avoid GORM's First() pk-matching)
+	// ambil mahasiswa by NIM
 	var mhs model.Mahasiswa
 	if err := db.DB.WithContext(ctx).Where("nim = ?", nim).Take(&mhs).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -147,8 +147,7 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 		return
 	}
 
-	// join CPL code (bisa pakai 1 query terpisah atau simple loop)
-	// untuk efisiensi, kita ambil semua cpl id -> kode_cpl dalam satu query
+	// join CPL code
 	cplIDs := make([]uint64, 0, len(list))
 	for _, n := range list {
 		cplIDs = append(cplIDs, n.IDCPL)
@@ -202,7 +201,6 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 }
 
 // GET /api/mahasiswa/:nim/nilai-mk?semester=1
-// Returns nilai_mk (grades) for each MK taken by the student in the given semester
 func getNilaiMKByMahasiswaHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	nim := c.Param("nim")
@@ -230,9 +228,9 @@ func getNilaiMKByMahasiswaHandler(c *gin.Context) {
 		return
 	}
 
-	// Query nilai_mk with MK details
+	// === FIX DI SINI: IDMK harus string untuk menampung UUID ===
 	type nilaiMKResult struct {
-		IDMK       uint64  `json:"id_mk"`
+		IDMK       string  `json:"id_mk"` // Fix: uint64 -> string
 		KodeMK     string  `json:"kode_mk"`
 		NamaMK     string  `json:"nama_mk"`
 		SKS        uint8   `json:"sks"`

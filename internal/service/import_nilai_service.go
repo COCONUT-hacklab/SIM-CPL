@@ -10,6 +10,7 @@ import (
 	"cpmk/internal/db"
 	"cpmk/internal/model"
 
+	"github.com/google/uuid" // Wajib import untuk generate UUID
 	"gorm.io/gorm"
 )
 
@@ -86,13 +87,20 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 			if _, ok := mkMap[key]; ok {
 				continue
 			}
+
+			// === PERBAIKAN: Generate UUID untuk MK Baru ===
+			newID := uuid.New().String()
+
 			mk := model.MataKuliah{
-				IDProdi:  prodi.IDProdi,
+				ID:       newID,          // Set ID string (UUID)
+				IDProdi:  &prodi.IDProdi, // Ambil alamat karena di model *uint64
 				KodeMK:   item.Kode,
 				NamaMK:   item.Nama,
 				SKS:      item.SKS,
 				Semester: params.Semester,
+				IsActive: true, // Set default active
 			}
+
 			if err := tx.Create(&mk).Error; err != nil {
 				return fmt.Errorf("insert mk gagal (%s): %w", item.Kode, err)
 			}
@@ -126,14 +134,13 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 
 			angkatan := deriveAngkatanFromNIM(d.NIM)
 			if angkatan == 0 {
-				// fallback kalau format NIM nggak kebaca (harusnya jarang)
 				angkatan = time.Now().Year()
 			}
 
 			m := model.Mahasiswa{
 				NIM:      d.NIM,
 				Nama:     d.Nama,
-				IDProdi:  prodi.IDProdi,
+				IDProdi:  &prodi.IDProdi, // Asumsi di model Mahasiswa IDProdi bukan pointer
 				Angkatan: angkatan,
 				Status:   "AKTIF",
 			}
@@ -159,13 +166,14 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 				}
 
 				var nilaiMK model.NilaiMK
+				// id_mk sudah string (UUID) dari mk.ID
 				err := tx.Where("id_mhs = ? AND id_mk = ?", mhs.IDMhs, mk.ID).
 					First(&nilaiMK).Error
 
 				if err == gorm.ErrRecordNotFound {
 					nilaiMK = model.NilaiMK{
 						IDMhs:          mhs.IDMhs,
-						IDMK:           mk.ID,
+						IDMK:           mk.ID, // Field String
 						SemesterTempuh: params.Semester,
 						TahunAjaran:    params.TahunAjaran,
 						NilaiAngka:     nilai,
@@ -201,7 +209,7 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 	}
 
 	// Hitung ulang CPL untuk prodi+semester ini
-	if err := RecalculateCPLForProdiSemester(ctx, gdb, prodi.IDProdi, params.Semester); err != nil {
+	if err := RecalculateCPLForProdiSemester(ctx, gdb, &prodi.IDProdi, params.Semester); err != nil {
 		return map[string]any{
 			"prodi":          prodi.KodeProdi,
 			"semester":       params.Semester,
@@ -229,7 +237,6 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 }
 
 // deriveAngkatanFromNIM mengekstrak 2 digit terakhir nim dan mengubahnya ke tahun 20xx.
-// Contoh: 105841115422 -> "22" -> 2022.
 func deriveAngkatanFromNIM(nim string) int {
 	if len(nim) < 2 {
 		return 0
@@ -241,7 +248,6 @@ func deriveAngkatanFromNIM(nim string) int {
 	}
 	year := 2000 + yy
 
-	// sanity check: jangan sampai 2099 dll yang aneh
 	currentYear := time.Now().Year()
 	if year < 2000 || year > currentYear+1 {
 		return 0

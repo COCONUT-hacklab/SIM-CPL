@@ -15,6 +15,7 @@ type SmartRpsCPMK struct {
 	CPMKNumber  int               `json:"cpmk_number"`
 	Description string            `json:"description"`
 	Bobot       *float64          `json:"bobot"`
+	MatchedCPL  string            `json:"matched_cpl"` // <--- TAMBAHAN
 	SubCPMKs    []SmartRpsSubCPMK `json:"sub_cpmks"`
 }
 

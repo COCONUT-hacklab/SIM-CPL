@@ -9,17 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// RecalculateCPLForProdiSemester
-// ------------------------------------------------------
-// Melakukan perhitungan nilai CPL per mahasiswa, per CPL,
-// untuk satu prodi & satu semester. Semua agregasi dilakukan
-// di level SQL (DB-first aggregation).
-//
-// Rumus:
-//   - Jika ada bobot di cpl_mk.bobot_fraction:
-//     nilai_cpl = SUM(nilai_mk * bobot) / SUM(bobot)
-//   - Jika semua bobot null/0:
-//     nilai_cpl = AVG(nilai_mk)
+// RecalculateCPLForProdiSemester menghitung nilai CPL mahasiswa
 func RecalculateCPLForProdiSemester(
 	ctx context.Context,
 	gdb *gorm.DB,
@@ -31,6 +21,7 @@ func RecalculateCPLForProdiSemester(
 	}
 	gdb = gdb.WithContext(ctx)
 
+	// FIX: Menggunakan m.id (bukan m.id_mk) pada JOIN
 	sql := `
 INSERT INTO nilai_cpl (
     id_mhs,
@@ -70,7 +61,7 @@ FROM (
             END
         ) AS sum_weight,
 
-        -- total nilai plain (tanpa bobot), untuk fallback
+        -- total nilai plain (fallback)
         SUM(
             CASE
                 WHEN cm.bobot_fraction IS NULL OR cm.bobot_fraction <= 0
@@ -79,7 +70,7 @@ FROM (
             END
         ) AS sum_plain,
 
-        -- hitung berapa mk tanpa bobot
+        -- hitung jumlah mk plain
         SUM(
             CASE
                 WHEN cm.bobot_fraction IS NULL OR cm.bobot_fraction <= 0
@@ -88,67 +79,24 @@ FROM (
             END
         ) AS count_plain,
 
-        -- nilai_cpl final
+        -- Rumus Nilai CPL Final
         CASE
-            WHEN
-                SUM(
-                    CASE
-                        WHEN cm.bobot_fraction IS NOT NULL AND cm.bobot_fraction > 0
-                            THEN cm.bobot_fraction
-                        ELSE 0
-                    END
-                ) > 0
+            WHEN SUM(CASE WHEN cm.bobot_fraction > 0 THEN cm.bobot_fraction ELSE 0 END) > 0
             THEN
-                SUM(
-                    CASE
-                        WHEN cm.bobot_fraction IS NOT NULL AND cm.bobot_fraction > 0
-                            THEN n.nilai_angka * cm.bobot_fraction
-                        ELSE 0
-                    END
-                )
-                /
-                SUM(
-                    CASE
-                        WHEN cm.bobot_fraction IS NOT NULL AND cm.bobot_fraction > 0
-                            THEN cm.bobot_fraction
-                        ELSE 0
-                    END
-                )
-            WHEN
-                SUM(
-                    CASE
-                        WHEN cm.bobot_fraction IS NULL OR cm.bobot_fraction <= 0
-                            THEN 1
-                        ELSE 0
-                    END
-                ) > 0
+                SUM(n.nilai_angka * cm.bobot_fraction) / SUM(cm.bobot_fraction)
+            WHEN SUM(CASE WHEN cm.bobot_fraction <= 0 OR cm.bobot_fraction IS NULL THEN 1 ELSE 0 END) > 0
             THEN
-                SUM(
-                    CASE
-                        WHEN cm.bobot_fraction IS NULL OR cm.bobot_fraction <= 0
-                            THEN n.nilai_angka
-                        ELSE 0
-                    END
-                )
-                /
-                SUM(
-                    CASE
-                        WHEN cm.bobot_fraction IS NULL OR cm.bobot_fraction <= 0
-                            THEN 1
-                        ELSE 0
-                    END
-                )
-            ELSE NULL
+                SUM(CASE WHEN cm.bobot_fraction <= 0 OR cm.bobot_fraction IS NULL THEN n.nilai_angka ELSE 0 END) 
+                / 
+                SUM(CASE WHEN cm.bobot_fraction <= 0 OR cm.bobot_fraction IS NULL THEN 1 ELSE 0 END)
+            ELSE 0
         END AS nilai_cpl
     FROM nilai_mk n
-    JOIN mk m ON n.id_mk = m.id_mk
-    JOIN cpl_mk cm ON cm.id_mk = m.id_mk
+    JOIN mk m ON n.id_mk = m.id       -- FIX: Join ke mk.id
+    JOIN cpl_mk cm ON cm.id_mk = m.id -- FIX: Join ke mk.id
     WHERE
         m.id_prodi = ?
         AND n.semester_tempuh = ?
-        AND (m.id_konsentrasi IS NULL OR m.id_konsentrasi = (
-            SELECT id_konsentrasi FROM mahasiswa WHERE id_mhs = n.id_mhs
-        ))
     GROUP BY
         n.id_mhs,
         cm.id_cpl
@@ -161,25 +109,14 @@ ON DUPLICATE KEY UPDATE
 `
 
 	if err := gdb.Exec(sql, semester, idProdi, semester).Error; err != nil {
-		return fmt.Errorf("recalculate CPL failed (prodi=%d, semester=%d): %w",
+		return fmt.Errorf("recalculate CPL failed (prodi=%v, semester=%d): %w",
 			idProdi, semester, err)
 	}
 
 	return nil
 }
 
-// RecalculateWeightsForProdi
-// ------------------------------------------------------
-// Menghitung ulang bobot:
-// 1) CPL -> MK  (tabel cpl_mk.bobot_fraction)
-//   - per CPL: total bobot = 1.0 (100%)
-//   - tiap MK yang terkait CPL tersebut: 1 / jumlah_mk
-//
-// 2) MK -> CPMK (tabel cpmk.bobot_cpmk)
-//   - per MK: total bobot = 1.0 (100%)
-//   - tiap CPMK di MK tsb: 1 / jumlah_cpmk
-//
-// Semuanya dilakukan di level SQL (UPDATE ... JOIN).
+// RecalculateWeightsForProdi menghitung ulang bobot (1/N)
 func RecalculateWeightsForProdi(
 	ctx context.Context,
 	gdb *gorm.DB,
@@ -195,19 +132,8 @@ func RecalculateWeightsForProdi(
 		return fmt.Errorf("begin tx recalc weights: %w", err)
 	}
 
-	// ---------- 1) Recalculate CPL -> MK weights ----------
-	//
-	// UPDATE cpl_mk cm
-	// JOIN (
-	//   SELECT cm2.id_cpl, COUNT(*) AS cnt
-	//   FROM cpl_mk cm2
-	//   JOIN cpl ON cpl.id_cpl = cm2.id_cpl
-	//   WHERE cpl.id_prodi = ?
-	//   GROUP BY cm2.id_cpl
-	// ) agg ON cm.id_cpl = agg.id_cpl
-	// JOIN cpl ON cpl.id_cpl = cm.id_cpl
-	// SET cm.bobot_fraction = 1.0 / agg.cnt
-	// WHERE cpl.id_prodi = ?;
+	// 1) Recalculate CPL -> MK weights (cpl_mk)
+	// Query ini aman karena cpl pakai id_cpl (integer)
 	updateCPLMK := `
 UPDATE cpl_mk AS cm
 JOIN (
@@ -226,17 +152,8 @@ WHERE cpl.id_prodi = ?;
 		return fmt.Errorf("recalculate CPL->MK weights failed: %w", err)
 	}
 
-	// ---------- 2) Recalculate MK -> CPMK weights ----------
-	//
-	// UPDATE cpmk cp
-	// JOIN (
-	//   SELECT id_mk, COUNT(*) AS cnt
-	//   FROM cpmk
-	//   GROUP BY id_mk
-	// ) agg ON cp.id_mk = agg.id_mk
-	// JOIN mk ON mk.id_mk = cp.id_mk
-	// SET cp.bobot_cpmk = 1.0 / agg.cnt
-	// WHERE mk.id_prodi = ?;
+	// 2) Recalculate MK -> CPMK weights (cpmk)
+	// FIX: Menggunakan mk.id (bukan mk.id_mk) pada JOIN
 	updateCPMK := `
 UPDATE cpmk AS cp
 JOIN (
@@ -244,8 +161,8 @@ JOIN (
     FROM cpmk
     GROUP BY id_mk
 ) AS agg ON cp.id_mk = agg.id_mk
-JOIN mk ON mk.id_mk = cp.id_mk
-SET cp.bobot_cpmk = 1.0 / agg.cnt
+JOIN mk ON mk.id = cp.id_mk  -- FIX: Join ke mk.id
+SET cp.bobot = 1.0 / agg.cnt
 WHERE mk.id_prodi = ?;
 `
 	if err := tx.Exec(updateCPMK, idProdi).Error; err != nil {
