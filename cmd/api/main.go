@@ -20,8 +20,7 @@ func main() {
 
 	db.MustConnect(ctx, cfg.DBDSN)
 
-	r := httphandler.NewRouter()
-
+	r := httphandler.NewRouter(db.DB, cfg)
 	SeedUsers(db.DB)
 	log.Printf("listening on :%s ...", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

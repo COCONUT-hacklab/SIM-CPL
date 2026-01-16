@@ -1,13 +1,17 @@
 package http
 
 import (
+	// Import Config
+	"cpmk/internal/config"
 	"cpmk/internal/middleware" // Pastikan folder middleware sudah ada
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	// Import Gorm
 )
 
-func NewRouter() *gin.Engine {
+func NewRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	r := gin.Default()
 
 	// Konfigurasi CORS (Sesuai kode lama Anda)
@@ -21,6 +25,7 @@ func NewRouter() *gin.Engine {
 		AllowCredentials: true,
 	}))
 
+	syncHandler := NewSyncHandler(db, cfg) // Tambahkan baris ini
 	// Endpoint Health Check (Bisa diakses siapa saja)
 	r.GET("/health", healthHandler)
 
@@ -51,6 +56,7 @@ func NewRouter() *gin.Engine {
 		api.GET("/mahasiswa/:nim/nilai-mk", getNilaiMKByMahasiswaHandler)
 		api.GET("/mahasiswa/:nim/mk/:id_mk/analisis", getMKAnalisisMahasiswaHandler)
 
+		api.POST("/sync/curriculum", syncHandler.TriggerSync)
 		// ==============================
 		// 2. PROTECTED ROUTES (Wajib Token/Login)
 		// ==============================

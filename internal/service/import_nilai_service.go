@@ -63,7 +63,7 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 
 	err = gdb.Transaction(func(tx *gorm.DB) error {
 		// 1. Pastikan semua MK ada
-		mkMap := make(map[string]model.MK)
+		mkMap := make(map[string]model.MataKuliah)
 
 		kodeList := make([]string, 0, len(params.MatkulList))
 		for _, m := range params.MatkulList {
@@ -71,7 +71,7 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 		}
 
 		if len(kodeList) > 0 {
-			var existingMK []model.MK
+			var existingMK []model.MataKuliah
 			if err := tx.Where("kode_mk IN ? AND id_prodi = ?", kodeList, prodi.IDProdi).
 				Find(&existingMK).Error; err != nil {
 				return fmt.Errorf("db error load mk existing: %w", err)
@@ -86,7 +86,7 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 			if _, ok := mkMap[key]; ok {
 				continue
 			}
-			mk := model.MK{
+			mk := model.MataKuliah{
 				IDProdi:  prodi.IDProdi,
 				KodeMK:   item.Kode,
 				NamaMK:   item.Nama,
@@ -159,13 +159,13 @@ func ImportNilaiMK(ctx context.Context, gdb *gorm.DB, params ImportNilaiParams) 
 				}
 
 				var nilaiMK model.NilaiMK
-				err := tx.Where("id_mhs = ? AND id_mk = ?", mhs.IDMhs, mk.IDMK).
+				err := tx.Where("id_mhs = ? AND id_mk = ?", mhs.IDMhs, mk.ID).
 					First(&nilaiMK).Error
 
 				if err == gorm.ErrRecordNotFound {
 					nilaiMK = model.NilaiMK{
 						IDMhs:          mhs.IDMhs,
-						IDMK:           mk.IDMK,
+						IDMK:           mk.ID,
 						SemesterTempuh: params.Semester,
 						TahunAjaran:    params.TahunAjaran,
 						NilaiAngka:     nilai,

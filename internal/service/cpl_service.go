@@ -23,7 +23,7 @@ import (
 func RecalculateCPLForProdiSemester(
 	ctx context.Context,
 	gdb *gorm.DB,
-	idProdi uint64,
+	idProdi *uint64,
 	semester uint8,
 ) error {
 	if gdb == nil {
