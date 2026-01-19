@@ -1,143 +1,112 @@
-// internal/http/handler_mahasiswa.go
 package http
 
 import (
-	"net/http"
-	"strconv"
-
 	"cpmk/internal/db"
 	"cpmk/internal/model"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
-
-type MahasiswaSummary struct {
-	IDMhs       uint64 `json:"id_mhs"`
-	NIM         string `json:"nim"`
-	Nama        string `json:"nama"`
-	Angkatan    int    `json:"angkatan"`
-	SemesterMax uint8  `json:"semester_max"`
-	TotalNilai  int    `json:"total_nilai"`
-	DariImport  int    `json:"dari_import"`
-}
-
-func listMahasiswaDenganNilaiHandler(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	idStr := c.Param("id_prodi")
-	idProdi, err := strconv.ParseUint(idStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id_prodi tidak valid"})
-		return
-	}
-
-	semStr := c.Query("semester") // boleh kosong
-
-	// DB-first aggregation: hitung di SQL, bukan di Go
-	baseSQL := `
-SELECT
-	m.id_mhs,
-	m.nim,
-	m.nama,
-	m.angkatan,
-	MAX(n.semester_tempuh) AS semester_max,
-	COUNT(*)              AS total_nilai,
-	SUM(CASE WHEN n.sumber = 'import_json' THEN 1 ELSE 0 END) AS dari_import
-FROM mahasiswa m
-JOIN nilai_mk n ON n.id_mhs = m.id_mhs
-WHERE m.id_prodi = ?
-`
-	args := []any{idProdi}
-
-	if semStr != "" {
-		baseSQL += " AND n.semester_tempuh = ?"
-		if sem, err := strconv.ParseUint(semStr, 10, 8); err == nil {
-			args = append(args, uint8(sem))
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "semester tidak valid"})
-			return
-		}
-	}
-
-	baseSQL += `
-GROUP BY
-	m.id_mhs, m.nim, m.nama, m.angkatan
-ORDER BY
-	m.nim
-`
-
-	var rows []MahasiswaSummary
-	if err := db.DB.WithContext(ctx).Raw(baseSQL, args...).Scan(&rows).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error summary mahasiswa"})
-		return
-	}
-
-	c.JSON(http.StatusOK, rows)
-}
-
-func listAngkatanHandler(c *gin.Context) {
-	idProdi := c.Param("id_prodi")
-	var angkatans []int
-
-	// Ambil daftar angkatan unik dari tabel mahasiswa
-	err := db.DB.Model(&model.Mahasiswa{}).
-		Where("id_prodi = ?", idProdi).
-		Distinct().
-		Order("angkatan DESC").
-		Pluck("angkatan", &angkatans).Error
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal ambil data angkatan"})
-		return
-	}
-	c.JSON(http.StatusOK, angkatans)
-}
 
 // GET /api/mahasiswa/:nim/mk/:id_mk/analisis
 func getMKAnalisisMahasiswaHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	nim := c.Param("nim")
-	idMK, _ := strconv.ParseUint(c.Param("id_mk"), 10, 64)
+	idMK := c.Param("id_mk")
 
-	// 1. Ambil data mahasiswa berdasarkan NIM
+	// 1. Validasi Mahasiswa
 	var mhs model.Mahasiswa
 	if err := db.DB.WithContext(ctx).Where("nim = ?", nim).First(&mhs).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "mahasiswa tidak ditemukan"})
 		return
 	}
 
-	// 2. Query Gabungan: Ambil CPMK, Nilai Mahasiswa, dan Sub-CPMK terkait
-	type SubCPMKRes struct {
-		Kode      string  `json:"kode_sub_cpmk"`
+	// 2. Ambil Nilai MK & Detail MK
+	type MKDetail struct {
+		KodeMK     string  `json:"kode_mk"`
+		NamaMK     string  `json:"nama_mk"`
+		SKS        uint8   `json:"sks"`
+		NilaiAngka float64 `json:"nilai_angka"`
+		NilaiHuruf string  `json:"nilai_huruf"`
+	}
+
+	var mkDetail MKDetail
+	// FIX: Update JOIN agar menggunakan m.id (UUID)
+	err := db.DB.WithContext(ctx).
+		Table("nilai_mk as n").
+		Select("m.kode_mk, m.nama_mk, m.sks, n.nilai_angka, n.nilai_huruf").
+		Joins("JOIN mk as m ON m.id = n.id_mk"). // <-- PERBAIKAN DISINI (m.id_mk -> m.id)
+		Where("n.id_mhs = ? AND n.id_mk = ?", mhs.IDMhs, idMK).
+		Scan(&mkDetail).Error
+
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "nilai mk tidak ditemukan"})
+		return
+	}
+
+	// 3. Ambil Nilai CPL yang disumbangkan MK ini
+	type CPLSumbangan struct {
+		KodeCPL   string  `json:"kode_cpl"`
 		Deskripsi string  `json:"deskripsi"`
-		Nilai     float64 `json:"nilai"`
+		Bobot     float64 `json:"bobot_mk_cpl"`
+		Nilai     float64 `json:"nilai_kontribusi"`
 	}
 
-	type CPMKAnalisisRes struct {
-		IDCPMK    uint64       `json:"id_cpmk"`
-		KodeCPMK  string       `json:"kode_cpmk"`
-		Nilai     float64      `json:"nilai"`
-		Bobot     float64      `json:"bobot_cpmk"`
-		Deskripsi string       `json:"deskripsi"`
-		SubCPMKs  []SubCPMKRes `json:"sub_cpmks"`
+	var cplList []CPLSumbangan
+	err = db.DB.WithContext(ctx).
+		Table("cpl_mk as cm").
+		Select("c.kode_cpl, c.deskripsi, cm.bobot_fraction as bobot, (? * cm.bobot_fraction) as nilai", mkDetail.NilaiAngka).
+		Joins("JOIN cpl as c ON c.id_cpl = cm.id_cpl").
+		Where("cm.id_mk = ?", idMK).
+		Scan(&cplList).Error
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "gagal hitung kontribusi cpl"})
+		return
 	}
 
-	var results []CPMKAnalisisRes
-	db.DB.WithContext(ctx).Table("cpmk").
-		Select("cpmk.id_cpmk, cpmk.kode_cpmk, cpmk.deskripsi, cpmk.bobot_cpmk, COALESCE(nilai_cpmk.nilai, 0) as nilai").
-		Joins("LEFT JOIN nilai_cpmk ON nilai_cpmk.id_cpmk = cpmk.id_cpmk AND nilai_cpmk.id_mhs = ?", mhs.IDMhs).
-		Where("cpmk.id_mk = ?", idMK).
-		Scan(&results)
+	c.JSON(http.StatusOK, gin.H{
+		"mahasiswa": gin.H{
+			"nim":  mhs.NIM,
+			"nama": mhs.Nama,
+		},
+		"matakuliah":     mkDetail,
+		"kontribusi_cpl": cplList,
+	})
+}
 
-	// 3. Ambil rincian Sub-CPMK untuk setiap CPMK
-	for i := range results {
-		var subs []SubCPMKRes
-		db.DB.WithContext(ctx).Table("sub_cpmk").
-			Select("sub_cpmk.kode_sub_cpmk, sub_cpmk.deskripsi, COALESCE(nilai_sub_cpmk.nilai, 0) as nilai").
-			Joins("LEFT JOIN nilai_sub_cpmk ON nilai_sub_cpmk.id_sub_cpmk = sub_cpmk.id_sub_cpmk AND nilai_sub_cpmk.id_mhs = ?", mhs.IDMhs).
-			Where("sub_cpmk.id_cpmk = ?", results[i].IDCPMK).
-			Scan(&subs)
-		results[i].SubCPMKs = subs
+// GET /api/prodi/:id_prodi/mahasiswa-nilai?semester=1
+func listMahasiswaDenganNilaiHandler(c *gin.Context) {
+	ctx := c.Request.Context()
+	idProdi := c.Param("id_prodi")
+	semStr := c.Query("semester")
+
+	// Filter dasar: Prodi
+	query := db.DB.WithContext(ctx).
+		Table("mahasiswa as m").
+		Select("m.id_mhs, m.nim, m.nama, m.angkatan, COUNT(n.id_nilai_mk) as jumlah_mk_dinilai, AVG(n.nilai_angka) as ipk_semester_ini").
+		Joins("LEFT JOIN nilai_mk as n ON n.id_mhs = m.id_mhs").
+		Where("m.id_prodi = ?", idProdi).
+		Group("m.id_mhs")
+
+	// Filter Semester pada Nilai
+	if semStr != "" {
+		query = query.Where("n.semester_tempuh = ?", semStr)
+	}
+
+	type MhsList struct {
+		IDMhs          uint64  `json:"id_mhs"`
+		NIM            string  `json:"nim"`
+		Nama           string  `json:"nama"`
+		Angkatan       int     `json:"angkatan"`
+		JumlahMK       int     `json:"jumlah_mk"`
+		IPKSemesterIni float64 `json:"rata_nilai"`
+	}
+
+	var results []MhsList
+	if err := query.Scan(&results).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+		return
 	}
 
 	c.JSON(http.StatusOK, results)

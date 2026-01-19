@@ -201,6 +201,7 @@ func getCPLByMahasiswaHandler(c *gin.Context) {
 }
 
 // GET /api/mahasiswa/:nim/nilai-mk?semester=1
+// GET /api/mahasiswa/:nim/nilai-mk?semester=1
 func getNilaiMKByMahasiswaHandler(c *gin.Context) {
 	ctx := c.Request.Context()
 	nim := c.Param("nim")
@@ -228,9 +229,8 @@ func getNilaiMKByMahasiswaHandler(c *gin.Context) {
 		return
 	}
 
-	// === FIX DI SINI: IDMK harus string untuk menampung UUID ===
 	type nilaiMKResult struct {
-		IDMK       string  `json:"id_mk"` // Fix: uint64 -> string
+		IDMK       string  `json:"id_mk"`
 		KodeMK     string  `json:"kode_mk"`
 		NamaMK     string  `json:"nama_mk"`
 		SKS        uint8   `json:"sks"`
@@ -239,10 +239,11 @@ func getNilaiMKByMahasiswaHandler(c *gin.Context) {
 	}
 
 	var results []nilaiMKResult
+	// === FIX FINAL: Gunakan mk.id (bukan mk.id_mk) ===
 	err = db.DB.WithContext(ctx).
 		Table("nilai_mk").
-		Select("mk.id_mk, mk.kode_mk, mk.nama_mk, mk.sks, nilai_mk.nilai_angka, nilai_mk.nilai_huruf").
-		Joins("JOIN mk ON mk.id_mk = nilai_mk.id_mk").
+		Select("mk.id, mk.kode_mk, mk.nama_mk, mk.sks, nilai_mk.nilai_angka, nilai_mk.nilai_huruf").
+		Joins("JOIN mk ON mk.id = nilai_mk.id_mk"). // Join ke mk.id
 		Where("nilai_mk.id_mhs = ? AND nilai_mk.semester_tempuh = ?", mhs.IDMhs, sem).
 		Order("mk.kode_mk").
 		Scan(&results).Error
