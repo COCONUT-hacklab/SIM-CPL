@@ -46,7 +46,7 @@ type CplScore = {
 };
 
 type CPMKItem = {
-  id_cpmk: number;
+  id_cpmk: string;
   kode_cpmk: string;
   deskripsi: string;
   bobot_cpmk: number | null;
@@ -59,7 +59,7 @@ type MappingNode = {
   };
   mkCount: number;
   mataKuliah: {
-    id_mk: number;
+    id_mk: string;
     kode: string;
     nama: string;
     sks: number;
@@ -91,11 +91,11 @@ export default function DashboardPage() {
   const [loadingCPL, setLoadingCPL] = useState(false);
 
   // ---------- state for MK Accordion (CPMK) ----------
-  const [expandedMKIds, setExpandedMKIds] = useState<number[]>([]);
-  const [cpmkByMK, setCpmkByMK] = useState<Record<number, CPMKItem[]>>({});
-  const [loadingCPMKFor, setLoadingCPMKFor] = useState<number | null>(null);
-  const [mhsCpmkScores, setMhsCpmkScores] = useState<Record<number, any[]>>({});
-  const [activeMKId, setActiveMKId] = useState<number | null>(null);
+  const [expandedMKIds, setExpandedMKIds] = useState<string[]>([]);
+  const [cpmkByMK, setCpmkByMK] = useState<Record<string, CPMKItem[]>>({});
+  const [loadingCPMKFor, setLoadingCPMKFor] = useState<string | null>(null);
+  const [mhsCpmkScores, setMhsCpmkScores] = useState<Record<string, any[]>>({});
+  const [activeMKId, setActiveMKId] = useState<string | null>(null);
   // ============================ FETCH PRODI ============================
   useEffect(() => {
     async function loadProdi() {
@@ -200,7 +200,7 @@ export default function DashboardPage() {
   }, [selectedProdi, selectedMahasiswa, selectedSemester, refreshKey, prodiList]);
 
   // ============================ TOGGLE MK & FETCH CPMK ============================
-  const toggleMKAccordion = async (idMK: number) => {
+  const toggleMKAccordion = async (idMK: string ) => {
   // Toggle accordion di timeline
   if (expandedMKIds.includes(idMK)) {
     setExpandedMKIds(prev => prev.filter(id => id !== idMK));
@@ -227,7 +227,13 @@ export default function DashboardPage() {
       try {
         const res = await fetch(`${API_BASE}/mahasiswa/${mhs.npm}/mk/${idMK}/analisis`);
         const data = await res.json();
-        setMhsCpmkScores(prev => ({ ...prev, [idMK]: data }));
+        const analisisArray = Array.isArray(data) 
+          ? data 
+          : (data.cpmk_analisis || []); 
+
+        setMhsCpmkScores(prev => ({ ...prev, [idMK]: analisisArray }));
+        // =========================
+        
       } catch (err) { console.error(err); }
     }
   }
@@ -361,7 +367,7 @@ export default function DashboardPage() {
                         >
                           <div className="flex justify-between items-start">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase">{mk.kode}</span>
+                              <span className="bg-emerald-500 text- text-[10px] font-bold px-2 py-0.5 rounded uppercase">{mk.kode}</span>
                               <h4 className="text-sm font-bold text-gray-800">{mk.nama}</h4>
                             </div>
                             {mk.cpmkCount > 0 && <span className={`text-[10px] transition-transform ${expandedMKIds.includes(mk.id_mk) ? 'rotate-180' : ''}`}>▼</span>}
@@ -375,7 +381,7 @@ export default function DashboardPage() {
     <div className="space-y-3">
       {(cpmkByMK[mk.id_mk] || []).map((cpmk) => {
         const isRelated = mk.relatedCpmks?.includes(cpmk.kode_cpmk);
-const scoreData = (mhsCpmkScores[mk.id_mk] || []).find(s => s.id_cpmk === cpmk.id_cpmk);
+const scoreData = (mhsCpmkScores[mk.id_mk] || []).find(s => String(s.id_cpmk) === String(cpmk.id_cpmk));
   const score = scoreData?.nilai || 0;
         return (
           <div key={cpmk.id_cpmk} className={`p-3 rounded-lg border ${isRelated ? 'bg-white' : 'bg-gray-50 opacity-50'}`}>

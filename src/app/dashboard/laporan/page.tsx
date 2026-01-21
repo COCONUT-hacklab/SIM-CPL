@@ -15,7 +15,7 @@ type Prodi = {
 };
 
 type MahasiswaSummary = {
-  id_mhs: number;
+  id_mhs: string;
   nim: string;
   nama: string;
   angkatan: number;
@@ -182,7 +182,7 @@ export default function LaporanPage() {
       ]);
 
       // Build nilai MK map for quick lookup
-      type NilaiMKItem = { id_mk: number; kode_mk: string; nama_mk: string; sks: number; nilai_angka: number };
+      type NilaiMKItem = { id_mk: string; kode_mk: string; nama_mk: string; sks: number; nilai_angka: number };
       const nilaiMKList: NilaiMKItem[] = nilaiMKRes?.nilai_mk || [];
       const nilaiMKMap: { [kodeMK: string]: number } = {};
       nilaiMKList.forEach(n => {
@@ -236,7 +236,7 @@ export default function LaporanPage() {
         kode_cpl: string;
         deskripsi: string;
         mk_list: {
-          id_mk: number;
+          id_mk: string;
           kode_mk: string;
           nama_mk: string;
           sks: number;
@@ -255,7 +255,7 @@ export default function LaporanPage() {
               // Fetch CPMK for this MK
               const cpmkRes = await fetch(`${API_BASE}/mk/${mk.id_mk}/cpmk`).catch(() => null);
               type CPMKBackend = {
-                id_cpmk: number;
+                id_cpmk: string;
                 kode_cpmk: string;
                 deskripsi: string;
                 bobot_cpmk: number | null;
@@ -342,7 +342,7 @@ export default function LaporanPage() {
       const cplStats: CPLStatItem[] = await statsRes.json();
 
       type MKItem = {
-        id_mk: number;
+        id_mk: string;
         kode_mk: string;
         nama_mk: string;
         sks: number;

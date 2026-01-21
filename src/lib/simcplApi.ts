@@ -10,7 +10,7 @@ export type Prodi = {
 };
 
 export type MK = {
-  id_mk: number;
+  id_mk: string;
   id_prodi: number;
   kode_mk: string;
   nama_mk: string;

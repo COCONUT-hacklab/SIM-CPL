@@ -8,8 +8,8 @@ const API_BASE = process.env.NEXT_PUBLIC_SIMCPL_API_BASE || 'http://localhost:80
 // Types from backend API
 type Prodi = { id_prodi: number; kode_prodi: string; nama_prodi: string };
 type MahasiswaSummary = { id_mhs: number; nim: string; nama: string; angkatan: number; semester_max: number; total_nilai: number };
-type MK = { id_mk: number; kode_mk: string; nama_mk: string; sks: number; semester: number; cpl_terkait: string[] };
-type CPMK = { id_cpmk: number; kode_cpmk: string; deskripsi: string; bobot_cpmk: number | null };
+type MK = { id_mk: string; kode_mk: string; nama_mk: string; sks: number; semester: number; cpl_terkait: string[] };
+type CPMK = { id_cpmk: string; kode_cpmk: string; deskripsi: string; bobot_cpmk: number | null };
 
 export default function InputNilaiPage() {
   const router = useRouter();
