@@ -31,10 +31,10 @@ type LocalNilai = {
 };
 
 type CPLStat = {
-  id_cpl: number;
+  id_cpl: number; // CPL ID tetap number (uint64 di backend)
   kode_cpl: string;
   deskripsi: string;
-  jumlah_mahasiswa: number; // Field baru dari backend
+  jumlah_mahasiswa: number;
   rata_nilai: number;
   min_nilai: number;
   max_nilai: number;
@@ -44,8 +44,8 @@ type CPLStat = {
 };
 
 type CPMK = {
-  id_cpmk: number;
-  id_mk: number;
+  id_cpmk: number; // CPMK ID biasanya tetap number (auto increment)
+  id_mk: string;   // [FIX] Ubah ke string agar cocok dengan UUID MK
   kode_cpmk: string;
   deskripsi: string;
   bobot_cpmk: number | null;
@@ -72,7 +72,9 @@ export default function ManajemenDataPage() {
   const [mkList, setMkList] = useState<MK[]>([]);
   const [cplStats, setCplStats] = useState<CPLStat[]>([]);
   const [isLoadingCPL, setIsLoadingCPL] = useState(false);
-  const [cpmkByMK, setCpmkByMK] = useState<Record<number, CPMK[]>>({});
+  
+  // [FIX] Record key ubah ke string untuk mengakomodasi UUID MK
+  const [cpmkByMK, setCpmkByMK] = useState<Record<string, CPMK[]>>({});
 
   // Data Lokal (Hanya Hasil Import Terakhir)
   const [mahasiswaWithNilai, setMahasiswaWithNilai] = useState<MahasiswaRow[]>([]);
@@ -83,8 +85,11 @@ export default function ManajemenDataPage() {
   const [importData, setImportData] = useState<any[]>([]);
   const [importStatus, setImportStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const [importMessage, setImportMessage] = useState('');
-  const [expandedMKIds, setExpandedMKIds] = useState<number[]>([]);
-  const [loadingCPMKFor, setLoadingCPMKFor] = useState<number | null>(null);
+  
+  // [FIX] State untuk menyimpan ID MK yang sedang dibuka (string array)
+  const [expandedMKIds, setExpandedMKIds] = useState<string[]>([]);
+  // [FIX] Loading state juga menggunakan string atau null
+  const [loadingCPMKFor, setLoadingCPMKFor] = useState<string | null>(null);
 
   // ===================== EFFECT: LOAD MASTER DATA =====================
   
@@ -120,7 +125,6 @@ export default function ManajemenDataPage() {
     async function fetchCPL() {
       setIsLoadingCPL(true);
       try {
-        // Mengambil statistik CPL dari DB
         const res = await fetch(`${API_BASE}/prodi/${selectedProdi?.id_prodi}/cpl-stats?semester=${selectedSemester}`);
         const data = await res.json();
         setCplStats(Array.isArray(data) ? data : []);
@@ -247,7 +251,9 @@ export default function ManajemenDataPage() {
   };
 
   // ===================== LOGIKA CPMK ACCORDION =====================
-  const toggleCPMK = async (idMK: number) => {
+  
+  // [FIX] Terima parameter string (UUID)
+  const toggleCPMK = async (idMK: string) => {
     if (expandedMKIds.includes(idMK)) {
       setExpandedMKIds(prev => prev.filter(id => id !== idMK));
       return;
