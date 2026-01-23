@@ -1,14 +1,19 @@
 package model
 
 type MataKuliah struct {
-	ID        string  `json:"id" gorm:"primaryKey;type:char(36)"` // Ubah ke String/UUID
-	IDProdi   *uint64 `json:"id_prodi" gorm:"column:id_prodi"`    // Tetap uint jika tabel prodi tidak diubah
-	KodeMK    string  `json:"kode_mk" gorm:"column:kode_mk;unique;not null"`
-	NamaMK    string  `json:"nama_mk" gorm:"column:nama_mk;not null"`
-	SKS       uint8   `json:"sks" gorm:"column:sks"`
-	Semester  uint8   `json:"semester" gorm:"column:semester"`
-	Deskripsi string  `json:"deskripsi" gorm:"column:deskripsi"`
-	IsActive  bool    `json:"is_active" gorm:"column:is_active;default:true"`
+	ID       string  `gorm:"type:char(36);primaryKey" json:"id_mk"`      // UUID
+	IDProdi  *uint64 `gorm:"type:bigint unsigned;index" json:"id_prodi"` // Tambah index biasa
+	KodeMK   string  `gorm:"type:varchar(191);index" json:"kode_mk"`     // <--- HAPUS 'uniqueIndex', ganti jadi 'index'
+	NamaMK   string  `gorm:"type:longtext" json:"nama_mk"`
+	SKS      uint8   `gorm:"type:tinyint unsigned" json:"sks"`
+	Semester uint8   `gorm:"type:tinyint unsigned" json:"semester"`
+	IsActive bool    `gorm:"type:boolean;default:true" json:"is_active"`
+
+	// Relations
+	CPMKs []CPMK `gorm:"foreignKey:IDMK;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"cpmk,omitempty"`
 }
 
-func (MataKuliah) TableName() string { return "mk" }
+// TableName overrides the table name used by User to `mk`
+func (MataKuliah) TableName() string {
+	return "mk"
+}

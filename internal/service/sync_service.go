@@ -116,8 +116,9 @@ func (s *SyncService) SyncCurriculum(targetProdiID uint64) error {
 func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCourse) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 
-		// === FIX PENTING: CARI MK BERDASARKAN KODE + PRODI ===
-		// Agar Prodi 2 tidak "mencuri" MK milik Prodi 1
+		// === PERBAIKAN UTAMA DISINI ===
+		// Cari MK berdasarkan KODE + ID_PRODI
+		// Agar MK "Agama" milik Elektro TIDAK menimpa MK "Agama" milik Informatika
 		var mk model.MataKuliah
 		err := tx.Where("kode_mk = ? AND id_prodi = ?", extMK.Code, targetProdiID).First(&mk).Error
 
@@ -125,7 +126,6 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 		mk.KodeMK = extMK.Code
 		mk.NamaMK = extMK.Title
 
-		// Handling pointer SKS/Semester
 		if extMK.Credits != nil {
 			mk.SKS = uint8(*extMK.Credits)
 		}
@@ -145,7 +145,7 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 			}
 		}
 
-		// B. Simpan CPMK
+		// Sync CPMK
 		for _, extCPMK := range extMK.CPMKs {
 			var cpmk model.CPMK
 			kodeCPMK := fmt.Sprintf("CPMK-%d", extCPMK.CPMKNumber)
@@ -154,17 +154,16 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 			cpmk.IDMK = mk.ID
 			cpmk.KodeCPMK = kodeCPMK
 			cpmk.Deskripsi = extCPMK.Description
-
-			// Simpan MatchedCPL
 			if extCPMK.MatchedCPL != "" {
 				cpmk.MatchedCPL = extCPMK.MatchedCPL
 			}
 
-			// Assignment Pointer yang Benar (Aman)
-			cpmk.Bobot = extCPMK.Bobot
-			if cpmk.Bobot == nil {
-				var zero float64 = 0
-				cpmk.Bobot = &zero
+			// Fix Pointer
+			if extCPMK.Bobot != nil {
+				cpmk.Bobot = extCPMK.Bobot
+			} else {
+				z := 0.0
+				cpmk.Bobot = &z
 			}
 
 			if err == gorm.ErrRecordNotFound {
@@ -178,7 +177,7 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 				}
 			}
 
-			// C. Simpan Sub-CPMK
+			// Sync Sub-CPMK
 			for _, extSub := range extCPMK.SubCPMKs {
 				var subCpmk model.SubCPMK
 				kodeSub := fmt.Sprintf("Sub-CPMK-%d", extSub.SubCPMKNumber)
@@ -188,10 +187,12 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 				subCpmk.KodeSubCPMK = kodeSub
 				subCpmk.Deskripsi = extSub.Description
 
-				subCpmk.Bobot = extSub.Bobot
-				if subCpmk.Bobot == nil {
-					var zero float64 = 0
-					subCpmk.Bobot = &zero
+				// Fix Pointer
+				if extSub.Bobot != nil {
+					subCpmk.Bobot = extSub.Bobot
+				} else {
+					z := 0.0
+					subCpmk.Bobot = &z
 				}
 
 				if err == gorm.ErrRecordNotFound {
@@ -206,30 +207,19 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 				}
 			}
 
-			// D. Mapping CPL (Relasi Table cpl_mk)
+			// Auto Mapping CPL (Optional, jika kode CPL cocok)
 			if extCPMK.MatchedCPL != "" {
-				cplCodes := strings.Split(extCPMK.MatchedCPL, ",")
-				for _, codeRaw := range cplCodes {
+				codes := strings.Split(extCPMK.MatchedCPL, ",")
+				for _, codeRaw := range codes {
 					code := strings.TrimSpace(codeRaw)
-					if code == "" {
-						continue
-					}
-					// Normalisasi: Hapus strip agar CPL-01 match dengan CPL01
-					codeClean := strings.ReplaceAll(code, "-", "")
+					codeClean := strings.ReplaceAll(code, "-", "") // CPL01 vs CPL-01
 
 					var cpl model.CPL
-					// Cari CPL dengan toleransi format
+					// Cari CPL hanya di prodi yang sama
 					if err := tx.Where("(kode_cpl = ? OR kode_cpl = ?) AND id_prodi = ?", code, codeClean, targetProdiID).First(&cpl).Error; err == nil {
 						var mapping model.CPLMK
-						errMap := tx.Where("id_cpl = ? AND id_mk = ?", cpl.IDCPL, mk.ID).First(&mapping).Error
-						if errMap == gorm.ErrRecordNotFound {
-							mapping = model.CPLMK{
-								IDCPL:         cpl.IDCPL,
-								IDMK:          mk.ID,
-								Sumber:        "sync",
-								BobotFraction: 0,
-							}
-							tx.Create(&mapping)
+						if err := tx.Where("id_cpl = ? AND id_mk = ?", cpl.IDCPL, mk.ID).First(&mapping).Error; err == gorm.ErrRecordNotFound {
+							tx.Create(&model.CPLMK{IDCPL: cpl.IDCPL, IDMK: mk.ID, Sumber: "sync", BobotFraction: 0})
 						}
 					}
 				}
