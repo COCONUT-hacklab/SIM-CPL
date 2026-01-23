@@ -15,59 +15,86 @@ import (
 
 func main() {
 	ctx := context.Background()
-
 	cfg := config.Load()
 
-	// 1. Connect Database
+	// 1. Connect Database (Pastikan db.MustConnect sudah menggunakan Retry Logic untuk Docker)
 	db.MustConnect(ctx, cfg.DBDSN)
 
-	// 2. JALANKAN AUTO MIGRATION DISINI
-	// Ini akan membuat tabel jika belum ada, atau mengupdate kolom jika ada perubahan di struct
-	log.Println("Memulai migrasi database otomatis...")
+	// 2. Auto Migration
+	log.Println(" Memulai migrasi database...")
 	err := db.DB.AutoMigrate(
-		&model.Prodi{},      // Master Prodi
-		&model.User{},       // User / Kaprodi
-		&model.MataKuliah{}, // Master MK
-		&model.Mahasiswa{},  // Master Mahasiswa
-		&model.CPL{},        // Master CPL
-		&model.CPMK{},       // Master CPMK
-		&model.SubCPMK{},    // Master Sub-CPMK
-		&model.CPLMK{},      // Mapping CPL <-> MK
-		&model.NilaiMK{},    // Transaksi Nilai MK
-		&model.NilaiCPL{},   // Transaksi Nilai CPL (Hasil Hitung)
+		&model.Prodi{}, // Master Prodi (Harus duluan)
+		&model.User{},  // User (Foreign Key ke Prodi)
+		&model.MataKuliah{},
+		&model.Mahasiswa{},
+		&model.CPL{},
+		&model.CPMK{},
+		&model.SubCPMK{},
+		&model.CPLMK{},
+		&model.NilaiMK{},
+		&model.NilaiCPL{},
 	)
-
 	if err != nil {
-		log.Fatalf("Gagal melakukan migrasi database: %v", err)
+		log.Fatalf(" Migrasi database gagal: %v", err)
 	}
-	log.Println("Migrasi database selesai.")
+	log.Println(" Migrasi database selesai.")
 
-	// 3. Setup Router & Server
-	r := httphandler.NewRouter(db.DB, cfg)
-
-	// 4. Seeder User Awal (Opsional, tetap dijalankan jika tabel user kosong/user belum ada)
+	// 3. SEEDING DATA (PERBAIKAN PRE-LOAD)
+	// Penting: Seed Prodi DULUAN, baru User bisa dibuat tanpa error Foreign Key.
+	SeedProdi(db.DB)
 	SeedUsers(db.DB)
 
-	log.Printf("listening on :%s ...", cfg.Port)
+	// 4. Setup Router
+	r := httphandler.NewRouter(db.DB, cfg)
+
+	log.Printf(" Server berjalan di port :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
-		log.Fatalf("server error: %v", err)
+		log.Fatalf("Server error: %v", err)
 	}
 }
 
-//SEKALI JALANIN SAJA UNTUK INSERT USER AWAL
+// === SEEDER PRODI (WAJIB ADA SEBELUM USER) ===
+func SeedProdi(gdb *gorm.DB) {
+	// Data Prodi sesuai ID yang digunakan di User
+	prodis := []model.Prodi{
+		{IDProdi: 1, KodeProdi: "TE", NamaProdi: "Teknik Elektro", Jenjang: "S1"},
+		{IDProdi: 2, KodeProdi: "TP", NamaProdi: "Teknik Pengairan", Jenjang: "S1"},
+		{IDProdi: 3, KodeProdi: "TA", NamaProdi: "Arsitektur", Jenjang: "S1"},
+		{IDProdi: 4, KodeProdi: "PWK", NamaProdi: "Perencanaan Wilayah dan Kota", Jenjang: "S1"},
+		{IDProdi: 5, KodeProdi: "TF", NamaProdi: "Informatika", Jenjang: "S1"},
+	}
 
-// Potongan kode untuk insert user awal (Seeder)
+	for _, p := range prodis {
+		var count int64
+		// Cek apakah prodi sudah ada (untuk menghindari duplikasi saat restart docker)
+		if err := gdb.Model(&model.Prodi{}).Where("id_prodi = ?", p.IDProdi).Count(&count).Error; err == nil && count == 0 {
+			if errCreate := gdb.Create(&p).Error; errCreate != nil {
+				log.Printf("Gagal seeding prodi %s: %v", p.NamaProdi, errCreate)
+			} else {
+				log.Printf("buildings Prodi %s created", p.NamaProdi)
+			}
+		}
+	}
+}
+
+// === SEEDER USER ===
 func SeedUsers(gdb *gorm.DB) {
-	// Password default dari screenshot
-	passDefault, _ := utils.HashPassword("kaprodi123")
+	passDefault, _ := utils.HashPassword("kaprodi123") // Password contoh
 
+	// Buat user Admin tanpa ID Prodi (nil)
 	users := []model.User{
-
-		{IDProdi: 1, Nama: "Kaprodi", Email: "kaprodi.elektro@unismuh.ac.id", Password: passDefault, Role: "kaprodi"},
+		{
+			IDProdi:  nil, // PENTING: nil artinya tidak terikat prodi manapun (Admin Global)
+			Nama:     "kaprodi",
+			Email:    "admin@unismuh.ac.id",
+			Password: passDefault,
+			Role:     "admin", // Set role sebagai admin
+		},
+		// Anda tetap bisa menambahkan user kaprodi spesifik jika mau
+		// {IDProdi: &idProdiElektro, Nama: "Kaprodi Elektro", ...},
 	}
 
 	for _, u := range users {
-		// Cek jika email sudah ada biar gak duplikat
 		var count int64
 		gdb.Model(&model.User{}).Where("email = ?", u.Email).Count(&count)
 		if count == 0 {

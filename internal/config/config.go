@@ -16,7 +16,7 @@ func Load() *Config {
 		DBDSN: env("DB_DSN", "root:@tcp(127.0.0.1:3306)/cpl_unismuh?parseTime=true&loc=Local"),
 		Port:  env("PORT", "8001"),
 		// Default ke localhost jika belum diset di .env
-		SmartRpsURL:   env("SMART_RPS_URL", "http://localhost:8080"),
+		SmartRpsURL:   env("SMART_RPS_URL", "http://103.151.145.166:8080"),
 		SyncSecretKey: env("SYNC_SECRET_KEY", "rahasia_dapur_fti_2025_jangan_disebar"),
 	}
 }

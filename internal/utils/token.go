@@ -12,9 +12,9 @@ import (
 var SecretKey = []byte("RAHASIA_DAPUR_SIMCPL_2025")
 
 type JWTClaim struct {
-	IDUser  uint64 `json:"id_user"`
-	IDProdi uint64 `json:"id_prodi"`
-	Role    string `json:"role"`
+	IDUser  uint64  `json:"id_user"`
+	IDProdi *uint64 `json:"id_prodi"`
+	Role    string  `json:"role"`
 	jwt.RegisteredClaims
 }
 
@@ -28,7 +28,7 @@ func CheckPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
-func GenerateToken(idUser, idProdi uint64, role string) (string, error) {
+func GenerateToken(idUser uint64, idProdi *uint64, role string) (string, error) {
 	claims := &JWTClaim{
 		IDUser:  idUser,
 		IDProdi: idProdi,
