@@ -39,12 +39,9 @@ func main() {
 	}
 	log.Println(" Migrasi database selesai.")
 
-	// 3. SEEDING DATA (PERBAIKAN PRE-LOAD)
-	// Penting: Seed Prodi DULUAN, baru User bisa dibuat tanpa error Foreign Key.
 	SeedProdi(db.DB)
 	SeedUsers(db.DB)
 
-	// 4. Setup Router
 	r := httphandler.NewRouter(db.DB, cfg)
 
 	log.Printf(" Server berjalan di port :%s", cfg.Port)
@@ -84,7 +81,7 @@ func SeedUsers(gdb *gorm.DB) {
 	// Buat user Admin tanpa ID Prodi (nil)
 	users := []model.User{
 		{
-			IDProdi:  nil, // PENTING: nil artinya tidak terikat prodi manapun (Admin Global)
+			ProdiID:  nil, // PENTING: nil artinya tidak terikat prodi manapun (Admin Global)
 			Nama:     "kaprodi",
 			Email:    "admin@unismuh.ac.id",
 			Password: passDefault,

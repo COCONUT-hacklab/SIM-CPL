@@ -28,10 +28,10 @@ func CheckPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
-func GenerateToken(idUser uint64, idProdi *uint64, role string) (string, error) {
+func GenerateToken(idUser uint64, prodiID *uint64, role string) (string, error) {
 	claims := &JWTClaim{
 		IDUser:  idUser,
-		IDProdi: idProdi,
+		IDProdi: prodiID,
 		Role:    role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Token berlaku 24 jam
