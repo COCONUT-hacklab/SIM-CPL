@@ -257,7 +257,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <label className="flex items-center text-sm font-semibold text-blue-800 mb-2">
-              <span className="mr-2">🏢</span> Pilih Program Studi
+              <span className="mr-2"></span> Pilih Program Studi
             </label>
             <select
               value={selectedProdi}
@@ -269,7 +269,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <label className="flex items-center text-sm font-semibold text-blue-800 mb-2">
-              <span className="mr-2">📅</span> Pilih Semester
+              <span className="mr-2"></span> Pilih Semester
             </label>
             <select
               value={selectedSemester}
@@ -281,7 +281,7 @@ export default function DashboardPage() {
           </div>
           <div>
             <label className="flex items-center text-sm font-semibold text-blue-800 mb-2">
-              <span className="mr-2">👤</span> Pilih Mahasiswa
+              <span className="mr-2"></span> Pilih Mahasiswa
             </label>
             <select
               value={selectedMahasiswa}
