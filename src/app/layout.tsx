@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import { Inter } from "next/font/google"; // Font default Next.js
+import "./globals.css"; // Import CSS Global (Tailwind)
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Sistem Management CPL - Universitas Muhammadiyah Makassar",
-  description: "Capaian Pembelajaran Lulusan",
+  title: "SIM-CPL FT Unismuh",
+  description: "Sistem Informasi Manajemen Capaian Pembelajaran Lulusan",
+  icons: {
+    icon: "/favicon.ico", // Pastikan ada favicon di folder public jika mau
+  },
 };
 
 export default function RootLayout({
@@ -16,7 +19,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body className={inter.className}>{children}</body>
+      <body className={`${inter.className} min-h-screen bg-background font-sans antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }
