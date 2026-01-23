@@ -93,7 +93,7 @@ export default function LaporanPage() {
 
   // Selection state
   const [selectedProdi, setSelectedProdi] = useState<Prodi | null>(null);
-  const [selectedSemester, setSelectedSemester] = useState(1);
+  const [selectedSemester, setSelectedSemester] = useState<number>(1);
   const [selectedMahasiswa, setSelectedMahasiswa] = useState<MahasiswaSummary | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('mahasiswa');
   const [mahasiswaViewTab, setMahasiswaViewTab] = useState<MahasiswaViewTab>('keseluruhan');
@@ -151,9 +151,10 @@ export default function LaporanPage() {
     fetch(`${API_BASE}/prodi`, { signal: controller.signal })
       .then(res => res.json())
       .then((data: Prodi[]) => {
-        setProdiList(data);
-        if (data.length > 0 && !selectedProdi) {
-          setSelectedProdi(data[0]);
+        const safeData = Array.isArray(data) ? data : [];
+        setProdiList(safeData);
+        if (safeData.length > 0 && !selectedProdi) {
+          setSelectedProdi(safeData[0]);
         }
       })
       .catch(err => {
@@ -181,7 +182,7 @@ export default function LaporanPage() {
     fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/mahasiswa-nilai`, { signal: controller.signal })
       .then(res => res.json())
       .then((data: MahasiswaSummary[]) => {
-        setMahasiswaList(data);
+        setMahasiswaList(Array.isArray(data) ? data : []);
       })
       .catch(err => {
         if (err.name !== 'AbortError') {
@@ -207,11 +208,12 @@ export default function LaporanPage() {
 
   // Filter Mahasiswa Logic
   const filteredMahasiswaList = useMemo(() => {
-    if (!searchTerm) return mahasiswaList;
+    const list = mahasiswaList || [];
+    if (!searchTerm) return list;
     const lower = searchTerm.toLowerCase();
-    return mahasiswaList.filter(m => 
-      m.nama.toLowerCase().includes(lower) || 
-      m.nim.includes(lower)
+    return list.filter(m => 
+      (m.nama || '').toLowerCase().includes(lower) || 
+      (m.nim || '').includes(lower)
     );
   }, [mahasiswaList, searchTerm]);
 
@@ -259,6 +261,7 @@ export default function LaporanPage() {
     setLoadingLaporan(true);
 
     try {
+      // 1. Fetch CPL history per semester
       const semesterRequests = [];
       for (let sem = 1; sem <= 8; sem++) {
         semesterRequests.push(
@@ -268,21 +271,36 @@ export default function LaporanPage() {
         );
       }
 
+      // 2. Fetch CPL Mapping & ALL Grades (Removed semester filter for grades)
       const [semesterResults, mappingRes, nilaiMKRes] = await Promise.all([
         Promise.all(semesterRequests),
         fetch(`${API_BASE}/prodi/${selectedProdi.id_prodi}/cpl-mapping?semester=${selectedSemester}`)
           .then(res => res.ok ? res.json() : [])
           .catch(() => []),
-        fetch(`${API_BASE}/mahasiswa/${selectedMahasiswa.nim}/nilai-mk?semester=${selectedSemester}`)
-          .then(res => res.ok ? res.json() : { nilai_mk: [] })
-          .catch(() => ({ nilai_mk: [] }))
+        // [PERBAIKAN] Ambil SEMUA nilai tanpa filter semester agar mapping selalu ketemu
+        // meskipun mahasiswa mengambil MK di semester berbeda (SP/Mengulang)
+        fetch(`${API_BASE}/mahasiswa/${selectedMahasiswa.nim}/nilai-mk`)
+          .then(res => res.ok ? res.json() : [])
+          .catch(() => [])
       ]);
 
       type NilaiMKItem = { id_mk: string; kode_mk: string; nama_mk: string; sks: number; nilai_angka: number };
-      const nilaiMKList: NilaiMKItem[] = nilaiMKRes?.nilai_mk || [];
-      const nilaiMKMap: { [kodeMK: string]: number } = {};
+      
+      // [PERBAIKAN] Handle format respon API (Array vs Object)
+      let nilaiMKList: NilaiMKItem[] = [];
+      if (Array.isArray(nilaiMKRes)) {
+        nilaiMKList = nilaiMKRes;
+      } else if (nilaiMKRes && Array.isArray(nilaiMKRes.nilai_mk)) {
+        nilaiMKList = nilaiMKRes.nilai_mk;
+      }
+      
+      // Map Nilai by UUID and Fallback to Code
+      const nilaiMKMapById: { [id_mk: string]: number } = {};
+      const nilaiMKMapByKode: { [kode: string]: number } = {};
+      
       nilaiMKList.forEach(n => {
-        nilaiMKMap[n.kode_mk.toLowerCase()] = n.nilai_angka;
+        if(n.id_mk) nilaiMKMapById[n.id_mk] = n.nilai_angka;
+        if(n.kode_mk) nilaiMKMapByKode[n.kode_mk.toLowerCase().trim()] = n.nilai_angka;
       });
 
       // Trend Data
@@ -297,7 +315,6 @@ export default function LaporanPage() {
         if (cplList.length > 0) {
           const avgCPL = cplList.reduce((sum, c) => sum + c.nilai_angka, 0) / cplList.length;
 
-          // Cari Terkuat & Terlemah
           const sortedByNilai = [...cplList].sort((a, b) => b.nilai_angka - a.nilai_angka);
           const strongest = sortedByNilai[0];
           const validForWeakest = cplList.filter(c => c.nilai_angka > 0).sort((a, b) => a.nilai_angka - b.nilai_angka);
@@ -340,27 +357,45 @@ export default function LaporanPage() {
       const cpmkBreakdown = await Promise.all(
         mappingData.map(async (cplMap) => {
           const cplScore = cplScores.find(c => c.kode_cpl === cplMap.kode_cpl);
+          
+          const mkList = cplMap.mk_list || [];
+
           const mkWithCpmk = await Promise.all(
-            cplMap.mk_list.map(async (mk) => {
+            mkList.map(async (mk) => {
               const cpmkRes = await fetch(`${API_BASE}/mk/${mk.id_mk}/cpmk`).catch(() => null);
-              type CPMKBackend = { id_cpmk: string; kode_cpmk: string; deskripsi: string; bobot_cpmk: number | null; };
+              
+              type CPMKBackend = { 
+                id: string; 
+                kode_cpmk: string; 
+                deskripsi: string; 
+                bobot: number | null;
+              };
+              
               const cpmkList: CPMKBackend[] = cpmkRes?.ok ? await cpmkRes.json() : [];
 
-              const bobotMK = cplMap.mk_list.length > 0
-                ? Math.round(100 / cplMap.mk_list.length * 100) / 100
+              const bobotMK = mkList.length > 0
+                ? Math.round(100 / mkList.length * 100) / 100
                 : 0;
+
+              let nilai = 0;
+              // [LOGIC] Prioritaskan pencarian ID, lalu Kode
+              if (nilaiMKMapById[mk.id_mk] !== undefined) {
+                nilai = nilaiMKMapById[mk.id_mk];
+              } else {
+                 nilai = nilaiMKMapByKode[mk.kode_mk.toLowerCase().trim()] ?? 0;
+              }
 
               return {
                 mkKode: mk.kode_mk,
                 mkNama: mk.nama_mk,
                 sks: mk.sks,
                 bobotMK,
-                nilaiMK: nilaiMKMap[mk.kode_mk.toLowerCase()] ?? 0,
+                nilaiMK: nilai,
                 cpmkList: cpmkList.map((cpmk) => ({
                   cpmkKode: cpmk.kode_cpmk,
                   deskripsi: cpmk.deskripsi,
-                  bobot: cpmk.bobot_cpmk !== null
-                    ? Math.round(cpmk.bobot_cpmk * 100)
+                  bobot: (cpmk.bobot !== null && cpmk.bobot !== undefined)
+                    ? Math.round(cpmk.bobot * 100)
                     : (cpmkList.length > 0 ? Math.round(bobotMK / cpmkList.length * 100) / 100 : 0),
                   nilaiWeighted: 0,
                 })),
@@ -372,9 +407,9 @@ export default function LaporanPage() {
             cplKode: cplMap.kode_cpl,
             cplDeskripsi: cplMap.deskripsi,
             nilaiCPL: cplScore?.nilai_angka ?? 0,
-            totalMKTerkait: cplMap.mk_list.length,
-            bobotMKPerCPL: cplMap.mk_list.length > 0
-              ? Math.round(100 / cplMap.mk_list.length * 100) / 100
+            totalMKTerkait: mkList.length,
+            bobotMKPerCPL: mkList.length > 0
+              ? Math.round(100 / mkList.length * 100) / 100
               : 0,
             mataKuliah: mkWithCpmk,
           };
@@ -615,7 +650,8 @@ export default function LaporanPage() {
                   setShowDropdown(true);
                 }}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                disabled={loadingMahasiswa || mahasiswaList.length === 0}
+                // Gunakan optional chaining dan OR empty array
+                disabled={loadingMahasiswa || (mahasiswaList || []).length === 0}
               />
               {showDropdown && searchTerm && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
@@ -713,7 +749,6 @@ export default function LaporanPage() {
                   <div className="space-y-4">
                     <div className="p-4 bg-green-50 rounded-xl border border-green-100">
                       <div className="flex items-center text-green-700 mb-2">
-                        <span className="mr-2">🏆</span>
                         <span className="text-xs font-bold uppercase">Kompetensi Terkuat</span>
                       </div>
                       {laporanData.cplOverallData && laporanData.cplOverallData.length > 0 ? (
@@ -726,7 +761,6 @@ export default function LaporanPage() {
 
                     <div className="p-5 bg-red-50 rounded-xl border border-red-100">
                       <div className="flex items-center text-red-700 mb-3">
-                        <span className="mr-2 text-lg">⚠️</span>
                         <span className="text-xs font-bold uppercase tracking-wider">Hambatan Utama Terdeteksi</span>
                       </div>
                       {laporanData.cplOverallData && laporanData.cplOverallData.length > 0 ? (
@@ -902,14 +936,21 @@ export default function LaporanPage() {
                                         </div>
                                         <div className="p-4">
                                           <div className="text-xs text-gray-600 mb-3 bg-purple-50 px-3 py-2 rounded"><strong>Perhitungan CPMK:</strong> {mk.bobotMK}% (bobot MK) ÷ {mk.cpmkList.length} CPMK = {mk.cpmkList[0]?.bobot}% per CPMK</div>
-                                          <table className="w-full">
-                                            <thead><tr className="text-xs text-gray-500 border-b border-gray-200"><th className="pb-2 text-left font-medium">CPMK</th><th className="pb-2 text-left font-medium">Deskripsi</th><th className="pb-2 text-center font-medium">Bobot (%)</th></tr></thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                              {mk.cpmkList.map((cpmk: any, cpmkIdx: number) => (
-                                                <tr key={cpmkIdx} className="text-sm"><td className="py-2 pr-4"><div className="flex items-center space-x-2"><div className="w-2 h-2 rounded-full bg-purple-400"></div><span className="font-medium text-purple-600">{cpmk.cpmkKode.length > 20 ? cpmk.cpmkKode.substring(0, 20) + '...' : cpmk.cpmkKode}</span></div></td><td className="py-2 text-gray-700">{cpmk.deskripsi}</td><td className="py-2 text-center"><span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">{cpmk.bobot}%</span></td></tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
+                                          
+                                          {mk.cpmkList.length > 0 ? (
+                                            <table className="w-full">
+                                              <thead><tr className="text-xs text-gray-500 border-b border-gray-200"><th className="pb-2 text-left font-medium">CPMK</th><th className="pb-2 text-left font-medium">Deskripsi</th><th className="pb-2 text-center font-medium">Bobot (%)</th></tr></thead>
+                                              <tbody className="divide-y divide-gray-100">
+                                                {mk.cpmkList.map((cpmk: any, cpmkIdx: number) => (
+                                                  <tr key={cpmkIdx} className="text-sm"><td className="py-2 pr-4"><div className="flex items-center space-x-2"><div className="w-2 h-2 rounded-full bg-purple-400"></div><span className="font-medium text-purple-600">{cpmk.cpmkKode.length > 20 ? cpmk.cpmkKode.substring(0, 20) + '...' : cpmk.cpmkKode}</span></div></td><td className="py-2 text-gray-700">{cpmk.deskripsi}</td><td className="py-2 text-center"><span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">{cpmk.bobot}%</span></td></tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          ) : (
+                                            <div className="text-center py-2 text-gray-400 text-xs italic bg-gray-50 rounded border border-dashed border-gray-200">
+                                              ⚠️ Belum ada CPMK yang didefinisikan untuk MK ini.
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
                                     ))}
