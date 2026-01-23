@@ -22,7 +22,6 @@ func NewSyncService(db *gorm.DB, cfg *config.Config) *SyncService {
 	return &SyncService{DB: db, Config: cfg}
 }
 
-// Helper untuk variasi kode prodi
 func mapKodeProdiToPrefix(kodeAngka string) []string {
 	kode := strings.TrimSpace(kodeAngka)
 	switch kode {
@@ -116,9 +115,11 @@ func (s *SyncService) SyncCurriculum(targetProdiID uint64) error {
 // processSingleMK menangani penyimpanan 1 MK + CPMK + SubCPMK + Mapping dalam satu transaksi kecil
 func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCourse) error {
 	return s.DB.Transaction(func(tx *gorm.DB) error {
-		// A. Simpan Mata Kuliah
+
+		// === FIX PENTING: CARI MK BERDASARKAN KODE + PRODI ===
+		// Agar Prodi 2 tidak "mencuri" MK milik Prodi 1
 		var mk model.MataKuliah
-		err := tx.Where("kode_mk = ?", extMK.Code).First(&mk).Error
+		err := tx.Where("kode_mk = ? AND id_prodi = ?", extMK.Code, targetProdiID).First(&mk).Error
 
 		mk.IDProdi = &targetProdiID
 		mk.KodeMK = extMK.Code
@@ -159,12 +160,8 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 				cpmk.MatchedCPL = extCPMK.MatchedCPL
 			}
 
-			// === FIX 1: Assignment Pointer yang Benar ===
-			// Karena di Model CPMK, Bobot adalah *float64, dan extCPMK.Bobot juga *float64
-			// Kita tinggal copy pointernya saja.
+			// Assignment Pointer yang Benar (Aman)
 			cpmk.Bobot = extCPMK.Bobot
-
-			// Jika nil, kita paksa jadi 0.0 (buat pointer baru)
 			if cpmk.Bobot == nil {
 				var zero float64 = 0
 				cpmk.Bobot = &zero
@@ -191,9 +188,7 @@ func (s *SyncService) processSingleMK(targetProdiID uint64, extMK dto.SmartRpsCo
 				subCpmk.KodeSubCPMK = kodeSub
 				subCpmk.Deskripsi = extSub.Description
 
-				// === FIX 2: Assignment Pointer SubCPMK ===
 				subCpmk.Bobot = extSub.Bobot
-
 				if subCpmk.Bobot == nil {
 					var zero float64 = 0
 					subCpmk.Bobot = &zero

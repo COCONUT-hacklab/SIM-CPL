@@ -54,11 +54,11 @@ func main() {
 func SeedProdi(gdb *gorm.DB) {
 	// Data Prodi sesuai ID yang digunakan di User
 	prodis := []model.Prodi{
-		{IDProdi: 1, KodeProdi: "TE", NamaProdi: "Teknik Elektro", Jenjang: "S1"},
-		{IDProdi: 2, KodeProdi: "TP", NamaProdi: "Teknik Pengairan", Jenjang: "S1"},
-		{IDProdi: 3, KodeProdi: "TA", NamaProdi: "Arsitektur", Jenjang: "S1"},
-		{IDProdi: 4, KodeProdi: "PWK", NamaProdi: "Perencanaan Wilayah dan Kota", Jenjang: "S1"},
-		{IDProdi: 5, KodeProdi: "TF", NamaProdi: "Informatika", Jenjang: "S1"},
+		{IDProdi: 1, KodeProdi: "20201", NamaProdi: "Teknik Elektro", Jenjang: "S1"},
+		{IDProdi: 2, KodeProdi: "22202", NamaProdi: "Teknik Pengairan", Jenjang: "S1"},
+		{IDProdi: 3, KodeProdi: "23201", NamaProdi: "Arsitektur", Jenjang: "S1"},
+		{IDProdi: 4, KodeProdi: "35201", NamaProdi: "Perencanaan Wilayah dan Kota", Jenjang: "S1"},
+		{IDProdi: 5, KodeProdi: "55202", NamaProdi: "Informatika", Jenjang: "S1"},
 	}
 
 	for _, p := range prodis {
