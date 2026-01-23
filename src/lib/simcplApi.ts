@@ -59,7 +59,6 @@ function normalizeBaseUrl(raw: unknown): string {
 
   // default backend local
   const fallback = 'http://localhost:8001/api';
-
   const base = (s || fallback).trim();
 
   // hilangkan trailing slash
@@ -68,7 +67,7 @@ function normalizeBaseUrl(raw: unknown): string {
 
 // PENTING: ini HARUS string. Jangan pakai wrapper function.
 export const API_BASE: string = normalizeBaseUrl(
-  process.env.NEXT_PUBLIC_SIMCPL_API_BASE,
+  process.env.NEXT_PUBLIC_API_URL
 );
 
 // join "API_BASE" dan path endpoint secara aman

@@ -52,7 +52,7 @@ type CPMK = {
 };
 
 // ===================== API CONFIG =====================
-const API_BASE = process.env.NEXT_PUBLIC_SIMCPL_API_BASE ?? 'http://localhost:8001/api';
+const API_BASE =   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001/api';
 const DEFAULT_TAHUN_AJARAN = '2024/2025';
 
 export default function ManajemenDataPage() {
@@ -586,11 +586,11 @@ export default function ManajemenDataPage() {
                           </div>
                           <p className="text-sm text-gray-600 leading-relaxed">{cp.deskripsi}</p>
                         </div>
-                      )) : (
+                      )) : 
                         <div className="flex items-center gap-2 text-gray-400 text-xs italic p-2">
-                          <span>⚠️</span> Belum ada CPMK yang didefinisikan.
+                          <span></span> Belum ada CPMK yang didefinisikan.
                         </div>
-                      )}
+                      }
                     </div>
                   )}
                 </div>

@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-const API_BASE = process.env.NEXT_PUBLIC_SIMCPL_API_BASE || 'http://localhost:8001/api';
+const API_BASE =   process.env.NEXT_PUBLIC_API_URL
+ || 'http://localhost:8001/api';
 
 // --- TIPE DATA YANG SUDAH DIPERBAIKI ---
 type Prodi = { 
