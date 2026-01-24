@@ -18,6 +18,9 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  ReferenceLine,
+  LabelList,
+  Cell
 } from 'recharts';
 
 // ============================ API CONFIG ============================
@@ -219,16 +222,19 @@ export default function DashboardPage() {
       setActiveMKId(idMK);
     }
 
+    // 1. Fetch Master CPMK (untuk Bobot)
     if (!cpmkByMK[idMK]) {
       setLoadingCPMKFor(idMK);
       try {
         const res = await fetch(`${API_BASE}/mk/${idMK}/cpmk`);
         const data = await res.json();
+        // Simpan data master
         setCpmkByMK(prev => ({ ...prev, [idMK]: Array.isArray(data) ? data : [] }));
       } catch (err) { console.error(err); } 
       finally { setLoadingCPMKFor(null); }
     }
 
+    // 2. Fetch Nilai Mahasiswa
     if (selectedMahasiswa && !mhsCpmkScores[idMK]) {
       const mhs = filteredMahasiswa.find(m => m.id === selectedMahasiswa);
       if (mhs) {
@@ -250,6 +256,29 @@ export default function DashboardPage() {
     const s = cplScores.find(sc => sc.kode === m.cpl.kode);
     return { subject: m.cpl.kode, value: s?.nilai || 0, fullMark: 100 };
   });
+
+  // [LOGIKA BARU] Persiapkan data Chart CPMK dengan menggabungkan Nilai & Master Bobot
+  const chartCPMKData = activeMKId ? (mhsCpmkScores[activeMKId] || []).map(scoreData => {
+    // Cari Master CPMK untuk mendapatkan Bobot Asli jika di scoreData 0/null
+    const masterCPMK = (cpmkByMK[activeMKId] || []).find(
+      m => m.kode_cpmk === scoreData.kode_cpmk || String(m.id) === String(scoreData.id_cpmk)
+    );
+
+    // Prioritas Bobot: Dari data nilai -> Dari master data -> 0
+    const rawBobot = scoreData.bobot || masterCPMK?.bobot;
+    const bobot = formatBobot(rawBobot);
+    
+    const nilaiAsli = scoreData.nilai || 0; // Skala 0-100
+    const nilaiKontribusi = (nilaiAsli * bobot) / 100; // Skala 0-Bobot
+
+    return {
+      ...scoreData,
+      bobotReal: bobot,
+      nilaiKontribusi: Number(nilaiKontribusi.toFixed(1)),
+      // Penanda warna bar (jika nilai asli < 50 merah, dsb)
+      fillColor: nilaiAsli >= 70 ? '#3b82f6' : nilaiAsli >= 50 ? '#f59e0b' : '#ef4444' 
+    };
+  }) : [];
 
   return (
     <div className="min-h-screen bg-[#f8faff] p-6">
@@ -302,7 +331,7 @@ export default function DashboardPage() {
               <div><p className="text-gray-500 font-medium">Prodi:</p><p className="font-bold text-blue-700">{prodiInfo?.nama_prodi}</p></div>
               <div><p className="text-gray-500 font-medium">NIM:</p><p className="font-bold text-blue-700">{selectedMhs.npm}</p></div>
               <div><p className="text-gray-500 font-medium">Angkatan:</p><p className="font-bold text-blue-700">{selectedMhs.angkatan}</p></div>
-              <div><p className="text-gray-500 font-medium">Source:</p><div className="flex items-center"><span className="mr-1">📂</span><span className="font-bold text-gray-700">Database</span></div></div>
+              <div><p className="text-gray-500 font-medium">Source:</p><div className="flex items-center"><span className="mr-1"></span><span className="font-bold text-gray-700">Database</span></div></div>
             </div>
           </div>
         )}
@@ -357,18 +386,25 @@ export default function DashboardPage() {
                             <div className="mt-4 space-y-3">
                               {(cpmkByMK[mk.id_mk] || []).map((cpmk) => {
                                 const isRelated = mk.relatedCpmks?.includes(cpmk.kode_cpmk);
-                                const scoreData = (mhsCpmkScores[mk.id_mk] || []).find(s => String(s.id_cpmk) === String(cpmk.id));
-                                const score = scoreData?.nilai || 0;
+                                
+                                // === LOGIKA GABUNGAN (FALLBACK BOBOT) ===
+                                const scoreData = (mhsCpmkScores[mk.id_mk] || []).find(s => String(s.id_cpmk) === String(cpmk.id) || s.kode_cpmk === cpmk.kode_cpmk);
+                                
+                                // Ambil bobot dari Master jika di nilai kosong (fix 0.0/0 issue)
                                 const bobotCPMK = formatBobot(cpmk.bobot ?? scoreData?.bobot);
+                                
+                                const score = scoreData?.nilai || 0; 
+                                const nilaiKontribusi = (score * bobotCPMK) / 100;
 
                                 return (
                                   <div key={cpmk.id} className={`p-3 rounded-lg border ${isRelated ? 'bg-white' : 'bg-gray-50 opacity-50'}`}>
                                     <div className="flex justify-between items-center mb-1">
                                       <span className="text-[10px] font-bold">{cpmk.kode_cpmk}</span>
-                                      {/* [FIX] Tampilkan Nilai Asli (0-100) dan Bobot */}
+                                      
+                                      {/* Tampilkan Poin Kontribusi */}
                                       {isRelated && (
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${score >= 70 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                          Nilai: {score} <span className="text-gray-400 font-normal">({bobotCPMK}%)</span>
+                                          Poin: {nilaiKontribusi.toFixed(1)} <span className="text-gray-400 font-normal">/ {bobotCPMK}</span>
                                         </span>
                                       )}
                                     </div>
@@ -382,14 +418,10 @@ export default function DashboardPage() {
                                           
                                           {scoreData?.sub_cpmks && scoreData.sub_cpmks.length > 0 ? (
                                             scoreData.sub_cpmks.map((sub: any, sIdx: number) => {
-                                              const subBobot = formatBobot(sub.bobot);
                                               return (
                                                 <div key={sIdx} className="flex justify-between items-center bg-emerald-50/50 p-2 rounded text-[10px] text-gray-600">
-                                                  <span className="flex-1 mr-4">{sub.kode_sub_cpmk}. {sub.deskripsi}</span>
-                                                  {/* [FIX] Tampilkan Nilai Asli Sub-CPMK */}
-                                                  <span className="font-bold text-emerald-700">
-                                                    {sub.nilai} <span className="text-[8px] text-gray-500 font-normal">({subBobot}%)</span>
-                                                  </span>
+                                                  <span className="flex-1">{sub.kode_sub_cpmk}. {sub.deskripsi}</span>
+                                                  {/* Hilangkan tampilan nilai Sub-CPMK, hanya deskripsi */}
                                                 </div>
                                               );
                                             })
@@ -436,7 +468,7 @@ export default function DashboardPage() {
           {/* B. Diagram Analisis CPMK */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold text-gray-800">Analisis CPMK Mahasiswa (Rentang 0-100)</h3>
+              <h3 className="text-lg font-bold text-gray-800">Analisis Poin CPMK</h3>
               {activeMKId && (
                 <span className="text-[10px] bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">
                   MK: {mappingData.flatMap(m => m.mataKuliah).find(mk => mk.id_mk === activeMKId)?.kode}
@@ -446,57 +478,74 @@ export default function DashboardPage() {
 
             {activeMKId ? (
               <div className="space-y-6">
-                {/* Bar Chart Nilai CPMK (Nilai Asli) */}
+                {/* Bar Chart Poin Kontribusi (Bukan Nilai Mentah) */}
                 <div className="h-[220px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={mhsCpmkScores[activeMKId] || []}>
+                    {/* Gunakan data yang sudah diolah (chartCPMKData) */}
+                    <BarChart data={chartCPMKData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="kode_cpmk" fontSize={10} tick={{fill: '#475569'}} />
-                      <YAxis domain={[0, 100]} fontSize={10} label={{ value: 'Nilai (0-100)', angle: -90, position: 'insideLeft', style: {fontSize: 10} }} />
-                      <Tooltip cursor={{fill: 'rgba(59, 130, 246, 0.05)'}} />
-                      {/* [FIX] Gunakan dataKey="nilai" (0-100) */}
-                      <Bar dataKey="nilai" name="Nilai Capaian" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} />
+                      <YAxis fontSize={10} label={{ value: 'Poin Kontribusi', angle: -90, position: 'insideLeft', style: {fontSize: 10} }} />
+                      <Tooltip 
+                        cursor={{fill: 'rgba(59, 130, 246, 0.05)'}}
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-white p-2 border border-gray-200 rounded shadow-sm text-xs">
+                                <p className="font-bold">{label}</p>
+                                <p>Nilai: {data.nilai}</p>
+                                <p>Bobot: {data.bobotReal}%</p>
+                                <p className="font-bold text-blue-600">Kontribusi: {data.nilaiKontribusi} Poin</p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Bar dataKey="nilaiKontribusi" name="Poin Kontribusi" radius={[4, 4, 0, 0]} barSize={40}>
+                        {chartCPMKData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fillColor} />
+                        ))}
+                        <LabelList dataKey="nilaiKontribusi" position="top" style={{fontSize: 10, fill: '#64748b'}} />
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* List Detail Sub-CPMK */}
+                {/* List Detail Hasil Analisis */}
                 <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
-                  {(mhsCpmkScores[activeMKId] || []).map((scoreData, idx) => {
-                    const bobotCPMK = formatBobot(scoreData.bobot);
-                    
-                    return (
-                      <div key={idx} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-bold text-gray-700">{scoreData.kode_cpmk}</span>
-                          {/* [FIX] Nilai Asli (0-100) + Bobot */}
-                          <span className="text-xs font-bold text-blue-600">
-                            {scoreData.nilai} <span className="text-[10px] text-gray-400 font-normal">/ {bobotCPMK}%</span>
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1.5 mb-3">
-                          {/* Progress bar sesuai nilai asli 0-100 */}
-                          <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${scoreData.nilai}%` }}></div>
-                        </div>
-
-                        <p className="text-[9px] font-bold text-emerald-600/70 uppercase tracking-wider">Sub-CPMK & Indikator:</p>
-                        <div className="space-y-2 mt-1">
-                          {scoreData.sub_cpmks?.map((sub: any, sIdx: number) => {
-                            const subBobot = formatBobot(sub.bobot);
-                            return (
-                              <div key={sIdx} className="flex justify-between bg-white p-2 rounded-lg text-[10px] border border-gray-100">
-                                <span className="text-gray-500 flex-1 mr-2">{sub.kode_sub_cpmk}. {sub.deskripsi}</span>
-                                {/* [FIX] Nilai Asli Sub-CPMK + Bobot */}
-                                <span className="font-bold text-gray-700 whitespace-nowrap">
-                                  {sub.nilai} <span className="text-gray-400 font-normal">({subBobot}%)</span>
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
+                  {chartCPMKData.map((scoreData, idx) => (
+                    <div key={idx} className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-xs font-bold text-gray-700">{scoreData.kode_cpmk}</span>
+                        {/* Tampilkan Poin Kontribusi */}
+                        <span className={`text-xs font-bold ${scoreData.nilai >= 70 ? 'text-blue-600' : 'text-amber-600'}`}>
+                          Poin: {scoreData.nilaiKontribusi} <span className="text-[10px] text-gray-400 font-normal">/ {scoreData.bobotReal}</span>
+                        </span>
                       </div>
-                    );
-                  })}
+                      
+                      {/* Progress Bar (Visualisasi Poin terhadap Bobot Maksimal) */}
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 mb-3">
+                        <div 
+                          className={`h-1.5 rounded-full ${scoreData.nilai >= 70 ? 'bg-blue-600' : 'bg-amber-500'}`} 
+                          style={{ width: `${(scoreData.nilaiKontribusi / (scoreData.bobotReal || 1)) * 100}%` }}
+                        ></div>
+                      </div>
+
+                      <p className="text-[9px] font-bold text-emerald-600/70 uppercase tracking-wider mb-2">Sub-CPMK & Indikator:</p>
+                      <div className="space-y-2">
+                        {scoreData.sub_cpmks?.map((sub: any, sIdx: number) => {
+                          return (
+                            <div key={sIdx} className="flex justify-between bg-white p-2 rounded-lg text-[10px] border border-gray-100">
+                              <span className="text-gray-500 flex-1">{sub.kode_sub_cpmk}. {sub.deskripsi}</span>
+                              {/* Hilangkan tampilan nilai Sub-CPMK */}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : (

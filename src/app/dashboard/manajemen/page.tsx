@@ -329,7 +329,7 @@ export default function ManajemenDataPage() {
             {/* List MK Semester (Fitur Baru) */}
             <div className="bg-white border-2 border-blue-50 p-6 rounded-2xl shadow-sm">
               <h4 className="font-bold text-blue-900 mb-4 flex items-center gap-2">
-                <span>📚</span> Mata Kuliah Terdaftar di Semester {selectedSemester}
+                <span></span> Mata Kuliah Terdaftar di Semester {selectedSemester}
               </h4>
               <div className="flex flex-wrap gap-2">
                 {mkList.length > 0 ? mkList.map(mk => (
@@ -344,7 +344,7 @@ export default function ManajemenDataPage() {
 
             {/* Petunjuk Import (Fitur Baru) */}
             <div className="bg-blue-50 border border-blue-100 p-6 rounded-2xl">
-              <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2">ℹ️ Petunjuk Import Nilai</h4>
+              <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2"> Petunjuk Import Nilai</h4>
               <ul className="text-sm text-blue-700 space-y-2 list-disc pl-5">
                 <li>Gunakan file format <strong>.xlsx</strong> (Excel) atau <strong>.csv</strong>.</li>
                 <li>File wajib memiliki kolom header <strong>NIM</strong> dan <strong>Nama</strong>.</li>
@@ -358,7 +358,7 @@ export default function ManajemenDataPage() {
             <div className="border-4 border-dashed border-gray-200 bg-gray-50/30 p-12 rounded-3xl text-center transition-colors hover:border-blue-300 hover:bg-blue-50/10">
               <input type="file" id="fileImport" onChange={handleFileSelect} className="hidden" accept=".xlsx, .csv" />
               <label htmlFor="fileImport" className="cursor-pointer flex flex-col items-center justify-center">
-                <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-sm">📂</div>
+                <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-3xl mb-4 shadow-sm"></div>
                 <p className="font-bold text-lg text-gray-700">{selectedFile ? selectedFile.name : "Klik untuk pilih file Excel / CSV"}</p>
                 <p className="text-xs text-gray-400 mt-2">Mendukung format .xlsx dan .csv</p>
               </label>
@@ -376,8 +376,8 @@ export default function ManajemenDataPage() {
               <div className={`p-5 rounded-xl border-l-4 shadow-sm ${importStatus === 'success' ? 'bg-green-50 border-green-500 text-green-800' : importStatus === 'error' ? 'bg-red-50 border-red-500 text-red-800' : 'bg-blue-50 border-blue-500 text-blue-800'}`}>
                 <p className="font-bold flex items-center">
                   {importStatus === 'processing' && <span className="animate-spin mr-2">⏳</span>}
-                  {importStatus === 'success' && <span className="mr-2">✅</span>}
-                  {importStatus === 'error' && <span className="mr-2">⚠️</span>}
+                  {importStatus === 'success' && <span className="mr-2"></span>}
+                  {importStatus === 'error' && <span className="mr-2"></span>}
                   {importMessage}
                 </p>
               </div>

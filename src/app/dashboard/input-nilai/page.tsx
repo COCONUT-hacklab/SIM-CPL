@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 const API_BASE =   process.env.NEXT_PUBLIC_API_URL
  || 'http://localhost:8001/api';
 
-// --- TIPE DATA YANG SUDAH DIPERBAIKI ---
+// --- TIPE DATA ---
 type Prodi = { 
   id_prodi: number; 
   kode_prodi: string; 
@@ -23,7 +23,7 @@ type MahasiswaSummary = {
 };
 
 type MK = { 
-  id_mk: string;      // Sesuai handler_master.go (json:"id_mk")
+  id_mk: string;      
   kode_mk: string; 
   nama_mk: string; 
   sks: number; 
@@ -32,10 +32,10 @@ type MK = {
 };
 
 type CPMK = { 
-  id: string;         // Sesuai cpmk.go (json:"id")
+  id: string;         
   kode_cpmk: string; 
   deskripsi: string; 
-  bobot: number | null; // Sesuai cpmk.go (json:"bobot")
+  bobot: number | null; 
 };
 
 export default function InputNilaiPage() {
@@ -128,7 +128,6 @@ export default function InputNilaiPage() {
 
   // 4. Load CPMK (Fix ID MK)
   useEffect(() => {
-    // Gunakan id_mk string UUID
     if (!selectedMK || !selectedMK.id_mk) { setCpmkList([]); return; }
     
     const controller = new AbortController();
@@ -154,17 +153,15 @@ export default function InputNilaiPage() {
       return;
     }
 
-    // 1. Hitung Kontribusi CPMK (Nilai * Bobot%)
+    // 1. Hitung Kontribusi CPMK
     const cpmkResults = cpmkList.map((cpmk) => {
       const rawBobot = cpmk.bobot ?? 0;
-      // Normalisasi bobot: jika desimal (0.2) jadi persen (20), jika > 1 anggap persen
       const bobotPersen = rawBobot <= 1 && rawBobot > 0 ? rawBobot * 100 : rawBobot;
       
       const effectiveBobot = (cpmk.bobot !== null)
         ? bobotPersen
         : (cpmkList.length > 0 ? 100 / cpmkList.length : 0);
 
-      // Rumus: Nilai MK * (Bobot / 100)
       const nilaiKontribusi = nilai * (effectiveBobot / 100);
       
       return {
@@ -172,14 +169,17 @@ export default function InputNilaiPage() {
         kode: cpmk.kode_cpmk,
         deskripsi: cpmk.deskripsi,
         bobot: Math.round(effectiveBobot * 10) / 10,
-        nilai: Math.round(nilaiKontribusi * 100) / 100, // Menampilkan nilai hasil kali bobot
+        nilai: Math.round(nilaiKontribusi * 100) / 100, 
       };
     });
 
     setCalculatedCPMK(cpmkResults);
 
-    // 2. Ambil List CPL (Hanya Kode)
-    const cplResults = (selectedMK.cpl_terkait || []).map(cplKode => ({
+    // 2. Ambil List CPL (Hanya Kode) & HAPUS DUPLIKAT
+    // [FIX] Menggunakan Set untuk memastikan kode CPL unik
+    const uniqueCPLs = Array.from(new Set(selectedMK.cpl_terkait || []));
+    
+    const cplResults = uniqueCPLs.map(cplKode => ({
       kode: cplKode,
     }));
 
@@ -309,7 +309,12 @@ export default function InputNilaiPage() {
               <button key={mk.id_mk} onClick={() => { setSelectedMK(mk); setNilaiMK(''); setShowResult(false); }} className={`p-4 rounded-lg border-2 transition-all text-left ${selectedMK?.id_mk === mk.id_mk ? 'border-blue-500 bg-blue-50 shadow-md' : 'border-gray-200 hover:border-blue-300'}`}>
                 <div className="flex items-start justify-between mb-2"><h4 className="font-semibold text-gray-800">{mk.nama_mk}</h4><span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">{mk.sks} SKS</span></div>
                 <p className="text-sm text-gray-600 mb-2">Kode: {mk.kode_mk}</p>
-                <div className="mt-2 flex flex-wrap gap-1">{(mk.cpl_terkait || []).map((cpl: string) => (<span key={cpl} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{cpl}</span>))}</div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {/* [FIX] Deduplikasi CPL di tampilan Card MK */}
+                  {Array.from(new Set(mk.cpl_terkait || [])).map((cpl: string) => (
+                    <span key={cpl} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">{cpl}</span>
+                  ))}
+                </div>
               </button>
             ))}
           </div>
