@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  simcpl-db:
+    image: mariadb:10.4
+    container_name: simcpl-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: cpl_unismuh
+      MYSQL_USER: simcpl
+      MYSQL_PASSWORD: simcplpass
+    ports:
+      - "3306:3306" # optional, boleh dihapus kalau mau internal-only
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - simcpl-net
+
+  simcpl-api:
+    build: .
+    container_name: simcpl-api
+    restart: unless-stopped
+    depends_on:
+      - simcpl-db
+    environment:
+      DB_DSN: simcpl:simcplpass@tcp(simcpl-db:3306)/cpl_unismuh?parseTime=true&loc=Local
+      PORT: "8001"
+      SMART_RPS_URL: "http://localhost:8080"
+      SYNC_SECRET_KEY: "ganti_dengan_secret_yang_kuat"
+    ports:
+      - "8001:8001"
+    networks:
+      - simcpl-net
+
+volumes:
+  db_data:
+
+networks:
+  simcpl-net:
+    driver: bridge

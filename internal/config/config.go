@@ -1,21 +1,26 @@
 package config
 
 import (
+	"log"
 	"os"
 )
 
 type Config struct {
 	DBDSN         string
 	Port          string
-	SmartRpsURL   string // URL Backend Smart RPS
-	SyncSecretKey string // Key yang sama dengan yang ada di Smart RPS
+	SmartRpsURL   string
+	SyncSecretKey string
 }
 
 func Load() *Config {
+	dbDsn := os.Getenv("DB_DSN")
+	if dbDsn == "" {
+		log.Fatal("DB_DSN environment variable is required")
+	}
+
 	return &Config{
-		DBDSN: env("DB_DSN", "root:@tcp(127.0.0.1:3306)/cpl_unismuh?parseTime=true&loc=Local"),
-		Port:  env("PORT", "8001"),
-		// Default ke localhost jika belum diset di .env
+		DBDSN:         dbDsn,
+		Port:          env("PORT", "8001"),
 		SmartRpsURL:   env("SMART_RPS_URL", "http://localhost:8080"),
 		SyncSecretKey: env("SYNC_SECRET_KEY", "rahasia_dapur_fti_2025_jangan_disebar"),
 	}

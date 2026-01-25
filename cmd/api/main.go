@@ -20,11 +20,12 @@ func main() {
 	// 1. Connect Database (Pastikan db.MustConnect sudah menggunakan Retry Logic untuk Docker)
 	db.MustConnect(ctx, cfg.DBDSN)
 
+	db.DB.DisableForeignKeyConstraintWhenMigrating = true
+
 	// 2. Auto Migration
 	log.Println(" Memulai migrasi database...")
 	err := db.DB.AutoMigrate(
 		&model.Prodi{}, // Master Prodi (Harus duluan)
-		&model.User{},  // User (Foreign Key ke Prodi)
 		&model.MataKuliah{},
 		&model.Mahasiswa{},
 		&model.CPL{},
